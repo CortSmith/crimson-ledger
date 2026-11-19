@@ -85,9 +85,17 @@ jobs:
             [ -z "${CIRCLE_PR_NUMBER:-}" ] || { echo "release refuses to run for a fork PR" >&2; exit 1; }
             : "${GITHUB_TOKEN:?set GITHUB_TOKEN in the app-release context}"
             curl -fsSL "https://github.com/cli/cli/releases/download/v2.63.2/gh_2.63.2_linux_amd64.tar.gz" | tar -xz -C /tmp
-            GH_TOKEN="$GITHUB_TOKEN" /tmp/gh_2.63.2_linux_amd64/bin/gh release create "$CIRCLE_TAG" release/* \
-              --repo "$CIRCLE_PROJECT_USERNAME/$CIRCLE_PROJECT_REPONAME" --verify-tag --title "Crimson Ledger $CIRCLE_TAG" \
-              --notes "Verify downloads against SHA256SUMS. See INSTALL.md inside each archive."
+            export GH_TOKEN="$GITHUB_TOKEN"
+            gh=/tmp/gh_2.63.2_linux_amd64/bin/gh
+            repo="$CIRCLE_PROJECT_USERNAME/$CIRCLE_PROJECT_REPONAME"
+            ls -l release
+            # A release made by hand in the GitHub UI is kept (title and notes); only the files are attached to it.
+            if "$gh" release view "$CIRCLE_TAG" --repo "$repo" >/dev/null 2>&1; then
+              "$gh" release upload "$CIRCLE_TAG" release/* --repo "$repo" --clobber
+            else
+              "$gh" release create "$CIRCLE_TAG" release/* --repo "$repo" --verify-tag --title "Crimson Ledger $CIRCLE_TAG" \
+                --notes "Verify downloads against SHA256SUMS. See INSTALL.md inside each archive."
+            fi
 
 workflows:
   app:
