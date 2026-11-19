@@ -18,12 +18,11 @@ var libs = []lib{
 }
 
 func dlopenOK(name string) bool {
-	h, err := purego.Dlopen(name, purego.RTLD_LAZY|purego.RTLD_LOCAL)
-	if err != nil {
-		return false
-	}
-	_ = purego.Dlclose(h)
-	return true
+	// The handle is deliberately not closed: unloading GTK/WebKit tears down their
+	// global state and segfaults the process under Go 1.26 with -race. The UI loads
+	// these libraries anyway, so keeping them mapped costs nothing.
+	_, err := purego.Dlopen(name, purego.RTLD_LAZY|purego.RTLD_LOCAL)
+	return err == nil
 }
 
 // Check returns the missing requirements for app (empty when the UI can start).

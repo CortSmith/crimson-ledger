@@ -173,7 +173,7 @@ check_domain_flags() {
     echo "--remove-domain cannot be combined with --domain, --certificate-arn or --hosted-zone-id" >&2; exit 2
   fi
   if [ -n "$DOMAIN" ] || [ -n "$CERT_ARN" ] || [ -n "$ZONE_ID" ]; then
-    [ -n "$DOMAIN" ] && [ -n "$CERT_ARN" ] || { echo "--domain and --certificate-arn go together" >&2; exit 2; }
+    if [ -z "$DOMAIN" ] || [ -z "$CERT_ARN" ]; then echo "--domain and --certificate-arn go together" >&2; exit 2; fi
     case "$DOMAIN" in *[A-Z]*|*" "*|*/*|http*) echo "--domain must be a lower-case host name such as api.example.com (no https://, no path)" >&2; exit 2 ;; esac
     case "$CERT_ARN" in arn:aws*:acm:"${REGION}":*:certificate/*) ;; *) echo "--certificate-arn must be an ACM certificate in ${REGION}, the region of this stack" >&2; exit 2 ;; esac
   fi
