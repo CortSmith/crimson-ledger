@@ -101,9 +101,9 @@ func (e *env) sweep(rs domain.Ruleset) []domain.SweepContact {
 	return got
 }
 
-func (e *env) trail(rs domain.Ruleset, g string, f store.TrailFilter) store.Trail {
+func (e *env) trail(g string, f store.TrailFilter) store.Trail {
 	e.t.Helper()
-	got, err := e.s.Trail(e.ctx, rs, g, f)
+	got, err := e.s.Trail(e.ctx, domain.RulesetPvP, g, f)
 	if err != nil {
 		e.t.Fatalf("Trail(%s): %v", g, err)
 	}

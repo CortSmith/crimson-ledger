@@ -202,29 +202,34 @@ func (f *Follower) replayContext(fh *os.File, end int64, handle func(string)) {
 		n, err := fh.ReadAt(buf[:want], off)
 		if n > 0 {
 			off += int64(n)
-			data := buf[:n]
-			for len(data) > 0 {
-				i := bytes.IndexByte(data, '\n')
-				if i < 0 {
-					pending = append(pending, data...)
-					break
-				}
-				line := data[:i]
-				if len(pending) > 0 {
-					pending = append(pending, line...)
-					line = pending
-				}
-				if bytes.Contains(line, mapChangeTag) || bytes.Contains(line, zoneChangeTag) {
-					handle(strings.TrimRight(string(line), "\r"))
-				}
-				pending = pending[:0]
-				data = data[i+1:]
-			}
+			pending = replayLines(buf[:n], pending, handle)
 		}
 		if err != nil {
 			break
 		}
 	}
+}
+
+// replayLines hands every complete zone/map line in data to handle. pending carries a partial line
+// from the previous chunk; the new partial tail is returned.
+func replayLines(data, pending []byte, handle func(string)) []byte {
+	for len(data) > 0 {
+		i := bytes.IndexByte(data, '\n')
+		if i < 0 {
+			return append(pending, data...)
+		}
+		line := data[:i]
+		if len(pending) > 0 {
+			pending = append(pending, line...)
+			line = pending
+		}
+		if bytes.Contains(line, mapChangeTag) || bytes.Contains(line, zoneChangeTag) {
+			handle(strings.TrimRight(string(line), "\r"))
+		}
+		pending = pending[:0]
+		data = data[i+1:]
+	}
+	return pending
 }
 
 var (
@@ -241,7 +246,7 @@ func (f *Follower) drain(handle func(string)) error {
 		}
 		return err
 	}
-	defer fh.Close()
+	defer func() { _ = fh.Close() }()
 	st, err := fh.Stat()
 	if err != nil {
 		return err

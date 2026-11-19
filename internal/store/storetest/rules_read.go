@@ -123,12 +123,20 @@ func rule10Keys(e *env) {
 		!got.CreatedAt.Equal(now) || got.ExpiresAt == nil || !got.ExpiresAt.Equal(exp) || got.Disabled || got.LastUsedAt != nil {
 		e.t.Fatalf("Get = %+v, %v; want the stored record with identical hash bytes", got, err)
 	}
+	keysUnknown(e, ks)
+	keysDisableAndList(e, ks)
+}
+
+func keysUnknown(e *env, ks store.KeyStore) {
 	if _, err := ks.Get(e.ctx, "nope"); !errors.Is(err, store.ErrNotFound) {
 		e.t.Errorf("Get unknown error = %v; want ErrNotFound", err)
 	}
 	if err := ks.SetDisabled(e.ctx, "nope", true); !errors.Is(err, store.ErrNotFound) {
 		e.t.Errorf("SetDisabled unknown error = %v; want ErrNotFound", err)
 	}
+}
+
+func keysDisableAndList(e *env, ks store.KeyStore) {
 	e.clock.Advance(time.Minute)
 	if err := ks.SetDisabled(e.ctx, "k1", true); err != nil {
 		e.t.Fatalf("SetDisabled: %v", err)
@@ -155,7 +163,7 @@ func rule11Prune(e *env) {
 	if err != nil || got.Fixes != 1 || got.Kills != 1 {
 		e.t.Fatalf("Prune = %+v, %v; want 1 fix and 1 kill removed", got, err)
 	}
-	if tr := e.trail(domain.RulesetPvP, g, store.TrailFilter{}); tr.Total != 1 {
+	if tr := e.trail(g, store.TrailFilter{}); tr.Total != 1 {
 		e.t.Errorf("trail total after prune = %d; want 1", tr.Total)
 	}
 	if b := e.bounty(domain.RulesetPvP); len(b) != 1 || b[0].Kills != 1 {
@@ -167,6 +175,10 @@ func rule11Prune(e *env) {
 	if c, _ := e.s.Charts(e.ctx); len(c) != 1 {
 		e.t.Error("chart was pruned; charts must survive")
 	}
+	pruneBatchMarker(e, p)
+}
+
+func pruneBatchMarker(e *env, p domain.Ping) {
 	if dup := e.apply(p); !dup.Duplicate {
 		e.t.Errorf("batch marker pruned too early: re-send = %+v; want Duplicate", dup)
 	}
@@ -221,21 +233,28 @@ func (e *env) snapshot(s store.Store, guids []string) snapshot {
 	return snap
 }
 
-func rule13Concurrency(e *env) {
-	const workers, shared = 8, 5
+// sharedPings builds one ping per worker; every ping touches the same contacts.
+func (e *env) sharedPings(workers int, guids []string) []domain.Ping {
 	var pings []domain.Ping
-	var guids []string
-	for i := 0; i < shared; i++ {
-		guids = append(guids, guid(70+i))
-	}
 	for w := 0; w < workers; w++ {
 		var cs []domain.Contact
 		for i, g := range guids {
 			at := e.ago(time.Duration(w+i+1) * time.Minute)
 			cs = append(cs, aContact(g, "Shared", at, aFix(at, 1411, float64(w), float64(i))))
 		}
-		pings = append(pings, e.aPing(withContacts(cs...), withKills(aKill(e.ago(time.Duration(w+1)*time.Minute), guids[w%shared], guids[(w+1)%shared]))))
+		kill := aKill(e.ago(time.Duration(w+1)*time.Minute), guids[w%len(guids)], guids[(w+1)%len(guids)])
+		pings = append(pings, e.aPing(withContacts(cs...), withKills(kill)))
 	}
+	return pings
+}
+
+func rule13Concurrency(e *env) {
+	const workers, shared = 8, 5
+	var guids []string
+	for i := 0; i < shared; i++ {
+		guids = append(guids, guid(70+i))
+	}
+	pings := e.sharedPings(workers, guids)
 	other := e.fresh()
 	for _, p := range pings {
 		if _, err := other.ApplyPing(e.ctx, p, e.clock.Now()); err != nil {

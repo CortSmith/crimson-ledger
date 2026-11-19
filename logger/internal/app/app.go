@@ -210,7 +210,7 @@ func (a *App) Start() (settings.Result, error) {
 	if err := a.checkServer(client); err != nil {
 		return a.fail(StateError, msgKeyRejected), nil
 	}
-	return a.launch(cfg, dir, client)
+	return a.launch(cfg, dir, client), nil
 }
 
 func (a *App) fail(s State, msg string) settings.Result {
@@ -246,14 +246,14 @@ func (a *App) checkServer(c Client) error {
 	return nil
 }
 
-func (a *App) launch(cfg config.LoggerConfig, dir string, client Client) (settings.Result, error) {
+func (a *App) launch(cfg config.LoggerConfig, dir string, client Client) settings.Result {
 	outbox, err := a.d.OutboxDir()
 	if err != nil {
-		return a.fail(StateIdle, "Could not prepare the upload folder."), nil
+		return a.fail(StateIdle, "Could not prepare the upload folder.")
 	}
 	q, err := pipeline.OpenQueue(outbox, pipeline.MaxQueueBytes)
 	if err != nil {
-		return a.fail(StateIdle, "Could not prepare the upload folder."), nil
+		return a.fail(StateIdle, "Could not prepare the upload folder.")
 	}
 	p := pipeline.New(pipeline.Options{
 		Source: a.d.NewSource(dir, cfg.TailFromStart, func(path string) { a.Log("Reading " + filepath.Base(path)); a.noteFile() }),
@@ -272,7 +272,7 @@ func (a *App) launch(cfg config.LoggerConfig, dir string, client Client) (settin
 		a.Log(msgInsecureLAN)
 	}
 	go a.run(ctx, p, done)
-	return settings.Result{OK: true}, nil
+	return settings.Result{OK: true}
 }
 
 func (a *App) noteFile() {

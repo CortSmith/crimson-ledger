@@ -100,63 +100,80 @@ func ParseLine(line string, loc *time.Location) (Event, error) {
 				ev.AdvancedEnabled = &v
 			}
 		}
-		return ev, nil
 	case "ZONE_CHANGE":
 		if len(f) > 2 {
 			ev.Zone = f[2]
 		}
-		return ev, nil
 	case "MAP_CHANGE":
-		if len(f) >= 7 {
-			id, e1 := strconv.Atoi(f[1])
-			a, e2 := strconv.ParseFloat(f[3], 64)
-			b, e3 := strconv.ParseFloat(f[4], 64)
-			c, e4 := strconv.ParseFloat(f[5], 64)
-			d, e5 := strconv.ParseFloat(f[6], 64)
-			if e1 == nil && e2 == nil && e3 == nil && e4 == nil && e5 == nil {
-				// Field order is the x-range (a,b) then the y-range (c,d), in the same axes as the
-				// advanced-block positions. Confirmed against the in-game coordinate readout.
-				ev.Map = &MapBounds{ID: id, Name: f[2],
-					X0: math.Min(a, b), X1: math.Max(a, b), Y0: math.Min(c, d), Y1: math.Max(c, d)}
-			}
-		}
-		return ev, nil
+		ev.Map = parseMapChange(f)
+	default:
+		parseCombat(&ev, f)
 	}
+	return ev, nil
+}
+
+// parseMapChange reads a MAP_CHANGE record, or returns nil if it is short or has a bad number.
+func parseMapChange(f []string) *MapBounds {
+	if len(f) < 7 {
+		return nil
+	}
+	id, e1 := strconv.Atoi(f[1])
+	a, e2 := strconv.ParseFloat(f[3], 64)
+	b, e3 := strconv.ParseFloat(f[4], 64)
+	c, e4 := strconv.ParseFloat(f[5], 64)
+	d, e5 := strconv.ParseFloat(f[6], 64)
+	if e1 != nil || e2 != nil || e3 != nil || e4 != nil || e5 != nil {
+		return nil
+	}
+	// Field order is the x-range (a,b) then the y-range (c,d), in the same axes as the
+	// advanced-block positions. Confirmed against the in-game coordinate readout.
+	return &MapBounds{ID: id, Name: f[2],
+		X0: math.Min(a, b), X1: math.Max(a, b), Y0: math.Min(c, d), Y1: math.Max(c, d)}
+}
+
+// parseCombat fills units, the advanced block and the amount of an ordinary combat record.
+func parseCombat(ev *Event, f []string) {
 	if len(f) < 9 {
-		return ev, nil
+		return
 	}
 	ev.Src = unitAt(f, 1)
 	ev.Dst = unitAt(f, 5)
 	if ev.Type == "UNIT_DIED" && len(f) > 9 && f[9] == "1" {
 		ev.Unconscious = true
 	}
-
 	prefix := prefixLen(ev.Type)
 	start := 9 + prefix
 	if prefix >= 0 {
 		ev.Info = parseInfo(f, start)
 	} else {
-		for k := 9; k+advLen <= len(f); k++ {
-			if in := parseInfo(f, k); in != nil && in.HasPos {
-				ev.Info = in
-				break
-			}
-		}
+		ev.Info = scanInfo(f)
 	}
 	ev.IsDamage = isDamage(ev.Type)
 	ev.IsHeal = ev.Type == "SPELL_HEAL" || ev.Type == "SPELL_PERIODIC_HEAL"
 	if prefix >= 0 && (ev.IsDamage || ev.IsHeal) {
-		idx := start
 		if ev.Info != nil {
-			idx += advLen
+			start += advLen
 		}
-		if idx < len(f) {
-			if v, err := strconv.ParseFloat(f[idx], 64); err == nil {
-				ev.Amount, ev.HasAmount = v, true
-			}
+		ev.Amount, ev.HasAmount = amountAt(f, start)
+	}
+}
+
+func amountAt(f []string, i int) (float64, bool) {
+	if i >= len(f) {
+		return 0, false
+	}
+	v, err := strconv.ParseFloat(f[i], 64)
+	return v, err == nil
+}
+
+// scanInfo looks for an advanced block with a position in an event whose prefix length is unknown.
+func scanInfo(f []string) *Info {
+	for k := 9; k+advLen <= len(f); k++ {
+		if in := parseInfo(f, k); in != nil && in.HasPos {
+			return in
 		}
 	}
-	return ev, nil
+	return nil
 }
 
 func isDamage(t string) bool {
@@ -218,6 +235,13 @@ func parseInfo(f []string, s int) *Info {
 	if e1 == nil && e2 == nil {
 		in.HP, in.MaxHP, in.HasHP = hp, mx, true
 	}
+	parsePosition(in, f, s)
+	in.Facing, _ = strconv.ParseFloat(f[s+17], 64)
+	in.Level, _ = strconv.Atoi(f[s+18])
+	return in
+}
+
+func parsePosition(in *Info, f []string, s int) {
 	x, e3 := strconv.ParseFloat(f[s+14], 64)
 	y, e4 := strconv.ParseFloat(f[s+15], 64)
 	mp, e5 := strconv.Atoi(f[s+16])
@@ -225,9 +249,6 @@ func parseInfo(f []string, s int) *Info {
 		!math.IsInf(x, 0) && !math.IsInf(y, 0) {
 		in.X, in.Y, in.MapID, in.HasPos = x, y, mp, true
 	}
-	in.Facing, _ = strconv.ParseFloat(f[s+17], 64)
-	in.Level, _ = strconv.Atoi(f[s+18])
-	return in
 }
 
 // parseTime parses "M/D/YYYY HH:MM:SS.mmm[+-H[:MM]]" into UTC.
@@ -241,58 +262,23 @@ func parseTime(s string, loc *time.Location) (time.Time, error) {
 	if len(date) != 3 {
 		return bad()
 	}
-	clock := s[sp+1:]
-	off, hasOff := 0, false
-	if k := strings.LastIndexAny(clock, "+-"); k > 0 {
-		o := clock[k:]
-		clock = clock[:k]
-		sign := 1
-		if o[0] == '-' {
-			sign = -1
-		}
-		parts := strings.SplitN(o[1:], ":", 2)
-		h, err := strconv.Atoi(parts[0])
-		if err != nil {
-			return bad()
-		}
-		m := 0
-		if len(parts) == 2 {
-			if m, err = strconv.Atoi(parts[1]); err != nil {
-				return bad()
-			}
-		}
-		off, hasOff = sign*(h*3600+m*60), true
+	clock, off, hasOff, ok := splitOffset(s[sp+1:])
+	if !ok {
+		return bad()
 	}
 	secs, frac, _ := strings.Cut(clock, ".")
 	hms := strings.Split(secs, ":")
 	if len(hms) != 3 {
 		return bad()
 	}
-	nums := make([]int, 0, 6)
-	for _, p := range append(append([]string{}, date...), hms...) {
-		n, err := strconv.Atoi(p)
-		if err != nil {
-			return bad()
-		}
-		nums = append(nums, n)
-	}
-	mo, d, y, hh, mm, ss := nums[0], nums[1], nums[2], nums[3], nums[4], nums[5]
-	if mo < 1 || mo > 12 || d < 1 || d > 31 || hh > 23 || mm > 59 || ss > 60 || hh < 0 || mm < 0 || ss < 0 {
+	nums, ok := dateTimeNumbers(date, hms)
+	if !ok {
 		return bad()
 	}
-	ns := 0
-	if frac != "" {
-		if len(frac) > 9 {
-			frac = frac[:9]
-		}
-		n, err := strconv.Atoi(frac)
-		if err != nil {
-			return bad()
-		}
-		for k := len(frac); k < 9; k++ {
-			n *= 10
-		}
-		ns = n
+	mo, d, y, hh, mm, ss := nums[0], nums[1], nums[2], nums[3], nums[4], nums[5]
+	ns, ok := parseNanos(frac)
+	if !ok {
+		return bad()
 	}
 	if hasOff {
 		t := time.Date(y, time.Month(mo), d, hh, mm, ss, ns, time.UTC)
@@ -304,40 +290,87 @@ func parseTime(s string, loc *time.Location) (time.Time, error) {
 	return time.Date(y, time.Month(mo), d, hh, mm, ss, ns, loc).UTC(), nil
 }
 
+// dateTimeNumbers converts month/day/year and hour:minute:second text to ints and range-checks them.
+func dateTimeNumbers(date, hms []string) ([6]int, bool) {
+	var nums [6]int
+	for i, p := range append(append([]string{}, date...), hms...) {
+		n, err := strconv.Atoi(p)
+		if err != nil {
+			return nums, false
+		}
+		nums[i] = n
+	}
+	// month, day, year, hour, minute, second; a leap second (60) is allowed.
+	lo := [6]int{1, 1, nums[2], 0, 0, 0}
+	hi := [6]int{12, 31, nums[2], 23, 59, 60}
+	for i, n := range nums {
+		if n < lo[i] || n > hi[i] {
+			return nums, false
+		}
+	}
+	return nums, true
+}
+
+// splitOffset cuts a trailing "+-H[:MM]" UTC offset off the clock text. off is in seconds.
+func splitOffset(clock string) (rest string, off int, hasOff, ok bool) {
+	k := strings.LastIndexAny(clock, "+-")
+	if k <= 0 {
+		return clock, 0, false, true
+	}
+	o := clock[k:]
+	sign := 1
+	if o[0] == '-' {
+		sign = -1
+	}
+	parts := strings.SplitN(o[1:], ":", 2)
+	h, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return "", 0, false, false
+	}
+	m := 0
+	if len(parts) == 2 {
+		if m, err = strconv.Atoi(parts[1]); err != nil {
+			return "", 0, false, false
+		}
+	}
+	return clock[:k], sign * (h*3600 + m*60), true, true
+}
+
+// parseNanos turns the fraction digits after the decimal point into nanoseconds.
+func parseNanos(frac string) (int, bool) {
+	if frac == "" {
+		return 0, true
+	}
+	if len(frac) > 9 {
+		frac = frac[:9]
+	}
+	n, err := strconv.Atoi(frac)
+	if err != nil {
+		return 0, false
+	}
+	for k := len(frac); k < 9; k++ {
+		n *= 10
+	}
+	return n, true
+}
+
 // splitCSV splits a record on commas honouring double quotes ("" escapes a quote).
 func splitCSV(s string) ([]string, error) {
 	out := make([]string, 0, 40)
 	for pos := 0; ; {
 		if pos < len(s) && s[pos] == '"' {
-			var b strings.Builder
-			pos++
-			closed := false
-			for pos < len(s) {
-				c := s[pos]
-				if c == '"' {
-					if pos+1 < len(s) && s[pos+1] == '"' {
-						b.WriteByte('"')
-						pos += 2
-						continue
-					}
-					pos++
-					closed = true
-					break
-				}
-				b.WriteByte(c)
-				pos++
+			field, next, err := readQuoted(s, pos)
+			if err != nil {
+				return nil, err
 			}
-			if !closed {
-				return nil, fmt.Errorf("%w: unterminated quote", ErrBadLine)
-			}
-			out = append(out, b.String())
-			if pos >= len(s) {
+			out = append(out, field)
+			if next >= len(s) {
 				return out, nil
 			}
-			if s[pos] != ',' {
+			if s[next] != ',' {
 				return nil, fmt.Errorf("%w: garbage after quote", ErrBadLine)
 			}
-			pos++
+			pos = next + 1
 			continue
 		}
 		next := strings.IndexByte(s[pos:], ',')
@@ -347,4 +380,23 @@ func splitCSV(s string) ([]string, error) {
 		out = append(out, s[pos:pos+next])
 		pos += next + 1
 	}
+}
+
+// readQuoted reads the quoted field that starts at s[pos] and returns it with the index just past the closing quote.
+func readQuoted(s string, pos int) (string, int, error) {
+	var b strings.Builder
+	for pos++; pos < len(s); pos++ {
+		c := s[pos]
+		if c != '"' {
+			b.WriteByte(c)
+			continue
+		}
+		if pos+1 < len(s) && s[pos+1] == '"' {
+			b.WriteByte('"')
+			pos++
+			continue
+		}
+		return b.String(), pos + 1, nil
+	}
+	return "", 0, fmt.Errorf("%w: unterminated quote", ErrBadLine)
 }

@@ -33,7 +33,7 @@ func TestBackup_ProducesOpenableFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open backup: %v", err)
 	}
-	defer b.Close()
+	defer func() { _ = b.Close() }()
 	if err := Integrity(ctx, b); err != nil {
 		t.Errorf("backup integrity: %v", err)
 	}

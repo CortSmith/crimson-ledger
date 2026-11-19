@@ -50,21 +50,25 @@ func rule03Fixes(e *env) {
 	e.apply(e.aPing(withContacts(aContact(g, "Walker", e.ago(time.Minute), fixes[3]))))
 	e.apply(e.aPing(withCharts(aChart(1411, "Durotar", 1, 1))))
 
-	all := e.trail(domain.RulesetPvP, g, store.TrailFilter{})
+	all := e.trail(g, store.TrailFilter{})
 	if all.Total != 4 || len(all.Fixes) != 4 || all.Fixes[0].X != 4 || all.Fixes[3].X != 1 {
 		e.t.Fatalf("trail = %+v; want 4 fixes newest first, no duplicates", all)
 	}
 	if len(all.Maps) != 2 || all.Maps[0].MapID != 1411 || all.Maps[0].Count != 3 || all.Maps[0].Zone != "Durotar" || all.Maps[1].Zone != "" {
 		e.t.Errorf("maps = %+v; want 1411 (3, Durotar) then 1412 (1, no zone)", all.Maps)
 	}
+	trailFilters(e, g)
+}
+
+func trailFilters(e *env, g string) {
 	m := 1411
-	if f := e.trail(domain.RulesetPvP, g, store.TrailFilter{MapID: &m}); len(f.Fixes) != 3 || f.Total != 4 {
+	if f := e.trail(g, store.TrailFilter{MapID: &m}); len(f.Fixes) != 3 || f.Total != 4 {
 		e.t.Errorf("map filter: %d fixes, total %d; want 3 and 4", len(f.Fixes), f.Total)
 	}
-	if f := e.trail(domain.RulesetPvP, g, store.TrailFilter{Since: e.ago(2 * time.Minute)}); len(f.Fixes) != 2 {
+	if f := e.trail(g, store.TrailFilter{Since: e.ago(2 * time.Minute)}); len(f.Fixes) != 2 {
 		e.t.Errorf("since filter: %d fixes; want 2", len(f.Fixes))
 	}
-	if f := e.trail(domain.RulesetPvP, g, store.TrailFilter{Limit: 1}); len(f.Fixes) != 1 || f.Fixes[0].X != 4 {
+	if f := e.trail(g, store.TrailFilter{Limit: 1}); len(f.Fixes) != 1 || f.Fixes[0].X != 4 {
 		e.t.Errorf("limit 1 = %+v; want only the newest fix", f.Fixes)
 	}
 	if _, err := e.s.Trail(e.ctx, domain.RulesetPvP, guid(99), store.TrailFilter{}); !errors.Is(err, store.ErrNotFound) {

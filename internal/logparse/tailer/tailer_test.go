@@ -2,6 +2,7 @@ package tailer
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -43,7 +44,7 @@ func appendTo(t *testing.T, path, s string, mod time.Time) {
 	if _, err := f.WriteString(s); err != nil {
 		t.Fatal(err)
 	}
-	f.Close()
+	_ = f.Close()
 	_ = os.Chtimes(path, mod, mod)
 }
 
@@ -63,7 +64,7 @@ func newF(dir string, o Options) *Follower {
 
 func TestNewestPicksLatestModTime(t *testing.T) {
 	dir := t.TempDir()
-	if _, err := Newest(dir, DefaultPattern); err != ErrNoLog {
+	if _, err := Newest(dir, DefaultPattern); !errors.Is(err, ErrNoLog) {
 		t.Fatalf("empty dir: %v", err)
 	}
 	if _, err := Newest(filepath.Join(dir, "missing"), DefaultPattern); err == nil {
@@ -321,7 +322,7 @@ func TestRunStopsOnCancelAndFollows(t *testing.T) {
 	cancel()
 	select {
 	case err := <-done:
-		if err != nil && err != context.Canceled {
+		if err != nil && !errors.Is(err, context.Canceled) {
 			t.Fatal(err)
 		}
 	case <-time.After(2 * time.Second):

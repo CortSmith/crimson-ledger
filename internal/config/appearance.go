@@ -107,98 +107,103 @@ func AppearanceDefaults() Appearance {
 // Resolved returns a copy with every unset field replaced by its default, so the page never handles gaps.
 func (a Appearance) Resolved() Appearance {
 	d := AppearanceDefaults()
-	str := func(v *string, def string) {
-		if *v == "" {
-			*v = def
+	for _, p := range []struct {
+		v   *string
+		def string
+	}{
+		{&a.Scheme, d.Scheme}, {&a.Palette, d.Palette}, {&a.Outline, d.Outline}, {&a.Stale, d.Stale},
+		{&a.Approx, d.Approx}, {&a.Labels, d.Labels}, {&a.TrailStyle, d.TrailStyle}, {&a.Grid, d.Grid},
+		{&a.Background, d.Background}, {&a.Density, d.Density},
+	} {
+		if *p.v == "" {
+			*p.v = p.def
 		}
 	}
-	num := func(v *int, def int) {
-		if *v == 0 {
-			*v = def
+	for _, p := range []struct {
+		v   *int
+		def int
+	}{
+		{&a.DotSize, d.DotSize}, {&a.SelectedRing, d.SelectedRing}, {&a.StaleMinutes, d.StaleMinutes},
+		{&a.TrailWidth, d.TrailWidth}, {&a.TrailDot, d.TrailDot}, {&a.GapMinutes, d.GapMinutes},
+		{&a.MapOpacity, d.MapOpacity}, {&a.UIScale, d.UIScale},
+	} {
+		if *p.v == 0 {
+			*p.v = p.def
 		}
 	}
-	flag := func(v **bool, def *bool) {
-		if *v == nil {
-			*v = def
+	for _, p := range []struct{ v, def **bool }{
+		{&a.ShowTrails, &d.ShowTrails}, {&a.TrailFade, &d.TrailFade}, {&a.TrailArrow, &d.TrailArrow},
+		{&a.ShapeOnly, &d.ShapeOnly}, {&a.ReduceMotion, &d.ReduceMotion}, {&a.NeutralAsHost, &d.NeutralAsHost},
+	} {
+		if *p.v == nil {
+			*p.v = *p.def
 		}
 	}
-	str(&a.Scheme, d.Scheme)
-	str(&a.Palette, d.Palette)
-	str(&a.Outline, d.Outline)
-	str(&a.Stale, d.Stale)
-	str(&a.Approx, d.Approx)
-	str(&a.Labels, d.Labels)
-	str(&a.TrailStyle, d.TrailStyle)
-	str(&a.Grid, d.Grid)
-	str(&a.Background, d.Background)
-	str(&a.Density, d.Density)
-	num(&a.DotSize, d.DotSize)
-	num(&a.SelectedRing, d.SelectedRing)
-	num(&a.StaleMinutes, d.StaleMinutes)
-	num(&a.TrailWidth, d.TrailWidth)
-	num(&a.TrailDot, d.TrailDot)
-	num(&a.GapMinutes, d.GapMinutes)
-	num(&a.MapOpacity, d.MapOpacity)
-	num(&a.UIScale, d.UIScale)
-	flag(&a.ShowTrails, d.ShowTrails)
-	flag(&a.TrailFade, d.TrailFade)
-	flag(&a.TrailArrow, d.TrailArrow)
-	flag(&a.ShapeOnly, d.ShapeOnly)
-	flag(&a.ReduceMotion, d.ReduceMotion)
-	flag(&a.NeutralAsHost, d.NeutralAsHost)
-	merged := map[string]string{}
-	for k, v := range d.Shapes {
-		merged[k] = v
-	}
-	for k, v := range a.Shapes {
-		merged[k] = v
-	}
-	a.Shapes = merged
+	a.Shapes = mergeShapes(d.Shapes, a.Shapes)
 	return a
+}
+
+// mergeShapes overlays the user's shape choices on the defaults.
+func mergeShapes(defaults, set map[string]string) map[string]string {
+	merged := map[string]string{}
+	for k, v := range defaults {
+		merged[k] = v
+	}
+	for k, v := range set {
+		merged[k] = v
+	}
+	return merged
+}
+
+const appearanceCtx = "viewer.json appearance"
+
+func oneOf(field, v string, allowed []string) error {
+	if v == "" || slices.Contains(allowed, v) {
+		return nil
+	}
+	return fmt.Errorf("%s: %s must be one of %v", appearanceCtx, field, allowed)
+}
+
+func inRange(field string, v, lo, hi int) error {
+	if v == 0 || (v >= lo && v <= hi) {
+		return nil
+	}
+	return fmt.Errorf("%s: %s must be between %d and %d (got %d)", appearanceCtx, field, lo, hi, v)
 }
 
 // Validate checks every field that is set. Unset (zero) fields are fine: they mean "default".
 func (a Appearance) Validate() error {
-	const f = "viewer.json appearance"
-	one := func(field, v string, allowed []string) error {
-		if v == "" || slices.Contains(allowed, v) {
-			return nil
-		}
-		return fmt.Errorf("%s: %s must be one of %v", f, field, allowed)
-	}
-	rng := func(field string, v, lo, hi int) error {
-		if v == 0 || (v >= lo && v <= hi) {
-			return nil
-		}
-		return fmt.Errorf("%s: %s must be between %d and %d (got %d)", f, field, lo, hi, v)
-	}
 	if err := firstError(
-		one("scheme", a.Scheme, schemes), one("outline", a.Outline, outlines), one("stale", a.Stale, staleKind),
-		one("approx", a.Approx, approxes), one("labels", a.Labels, labelKind), one("trail_style", a.TrailStyle, trailKind),
-		one("grid", a.Grid, gridKind), one("background", a.Background, backdrops), one("density", a.Density, densities),
-		rng("dot_size", a.DotSize, 3, 12), rng("selected_ring", a.SelectedRing, 5, 20), rng("stale_minutes", a.StaleMinutes, 1, 120),
-		rng("trail_width", a.TrailWidth, 1, 4), rng("trail_dot", a.TrailDot, 1, 6), rng("gap_minutes", a.GapMinutes, 1, 240),
-		rng("map_opacity", a.MapOpacity, 30, 100), rng("ui_scale", a.UIScale, 90, 150),
+		oneOf("scheme", a.Scheme, schemes), oneOf("outline", a.Outline, outlines), oneOf("stale", a.Stale, staleKind),
+		oneOf("approx", a.Approx, approxes), oneOf("labels", a.Labels, labelKind), oneOf("trail_style", a.TrailStyle, trailKind),
+		oneOf("grid", a.Grid, gridKind), oneOf("background", a.Background, backdrops), oneOf("density", a.Density, densities),
+		inRange("dot_size", a.DotSize, 3, 12), inRange("selected_ring", a.SelectedRing, 5, 20), inRange("stale_minutes", a.StaleMinutes, 1, 120),
+		inRange("trail_width", a.TrailWidth, 1, 4), inRange("trail_dot", a.TrailDot, 1, 6), inRange("gap_minutes", a.GapMinutes, 1, 240),
+		inRange("map_opacity", a.MapOpacity, 30, 100), inRange("ui_scale", a.UIScale, 90, 150),
 	); err != nil {
 		return err
 	}
 	if a.Palette != "" && a.Palette != "custom" {
 		if _, ok := Presets()[a.Palette]; !ok {
-			return fmt.Errorf("%s: palette must be a preset name or custom", f)
+			return fmt.Errorf("%s: palette must be a preset name or custom", appearanceCtx)
 		}
 	}
 	for k, v := range a.Shapes {
 		if !slices.Contains(reactions, k) || !slices.Contains(shapes, v) {
-			return fmt.Errorf("%s: shapes must map friendly, hostile or neutral to one of %v", f, shapes)
+			return fmt.Errorf("%s: shapes must map friendly, hostile or neutral to one of %v", appearanceCtx, shapes)
 		}
 	}
+	return a.validateCustom()
+}
+
+func (a Appearance) validateCustom() error {
 	valid := append(slices.Clone(ColorKeys), TrackKeys...)
 	for k, v := range a.Custom {
 		if !slices.Contains(valid, k) {
-			return fmt.Errorf("%s: unknown custom colour %q", f, k)
+			return fmt.Errorf("%s: unknown custom colour %q", appearanceCtx, k)
 		}
 		if !hexColour.MatchString(v) {
-			return fmt.Errorf("%s: custom colour %s must look like #rrggbb", f, k)
+			return fmt.Errorf("%s: custom colour %s must look like #rrggbb", appearanceCtx, k)
 		}
 	}
 	return nil

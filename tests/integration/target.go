@@ -59,24 +59,30 @@ func FromEnv(getenv func(string) string) (Target, error) {
 	if t.IngestKey == "" || t.ViewKey == "" {
 		return Target{}, errors.New("CL_INGEST_KEY and CL_VIEW_KEY are required")
 	}
+	if err := checkTargetURL(t, getenv("CL_IT_STACK")); err != nil {
+		return Target{}, err
+	}
+	return t, nil
+}
+
+// checkTargetURL applies the per-kind URL guards: loopback for local, https and a deployed stack for aws.
+func checkTargetURL(t Target, stackPath string) error {
 	u, err := url.Parse(t.BaseURL)
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
-		return Target{}, errors.New("CL_URL must be an absolute http(s) URL")
+		return errors.New("CL_URL must be an absolute http(s) URL")
 	}
 	switch t.Kind {
 	case KindLocal:
 		if !isLoopback(u.Hostname()) {
-			return Target{}, fmt.Errorf("local target must be a loopback address, got host %q", u.Hostname())
+			return fmt.Errorf("local target must be a loopback address, got host %q", u.Hostname())
 		}
 	case KindAWS:
 		if u.Scheme != "https" {
-			return Target{}, errors.New("aws target must be https")
+			return errors.New("aws target must be https")
 		}
-		if err := inStackFile(getenv("CL_IT_STACK"), t.BaseURL); err != nil {
-			return Target{}, err
-		}
+		return inStackFile(stackPath, t.BaseURL)
 	}
-	return t, nil
+	return nil
 }
 
 func isLoopback(host string) bool {

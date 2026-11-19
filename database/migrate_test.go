@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"errors"
 	"io/fs"
 	"regexp"
 	"strings"
@@ -72,7 +73,7 @@ func TestMigrate_RefusesNewerDatabase(t *testing.T) {
 	if _, err := db.ExecContext(ctx, "INSERT INTO schema_migrations VALUES (99, 0)"); err != nil {
 		t.Fatal(err)
 	}
-	if err := Migrate(ctx, db); err != ErrNewerDatabase {
+	if err := Migrate(ctx, db); !errors.Is(err, ErrNewerDatabase) {
 		t.Fatalf("err = %v, want ErrNewerDatabase", err)
 	}
 }

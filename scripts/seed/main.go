@@ -58,14 +58,25 @@ func (p *player) reaction() domain.Reaction {
 	return domain.ReactionFriendly
 }
 
-func main() {
+type options struct {
+	apiURL   string
+	key      string
+	rs       domain.Ruleset
+	players  int
+	duration time.Duration
+	interval time.Duration
+	seed     uint64
+}
+
+func parseOptions() options {
 	var (
 		apiURL   = flag.String("api-url", "http://127.0.0.1:8443", "crimson-api address")
 		ruleset  = flag.String("ruleset", "pvp", "normal|pvp|rp|rppvp")
 		players  = flag.Int("players", 40, "number of fake players (half Alliance, half Horde)")
 		duration = flag.Duration("duration", 10*time.Minute, "how long to keep feeding, starting now")
 		interval = flag.Duration("interval", 5*time.Second, "time between pings")
-		seed     = flag.Uint64("seed", uint64(time.Now().UnixNano()), "random seed (same seed, same cast)")
+		// A seed for fake test data, not a secret: time-based default, overridable for repeatable casts.
+		seed = flag.Uint64("seed", uint64(time.Now().UnixNano()), "random seed (same seed, same cast)") //nolint:gosec // G115: wraps harmlessly
 	)
 	flag.Parse()
 	if *players < 2 || *players > domain.MaxContacts || *interval < time.Second || *duration < *interval {
@@ -79,9 +90,13 @@ func main() {
 	if !rs.Valid() {
 		fatalf("unknown ruleset %q", *ruleset)
 	}
+	return options{*apiURL, key, rs, *players, *duration, *interval, *seed}
+}
 
-	rng := rand.New(rand.NewPCG(*seed, 0x5eed))
-	cast := make([]*player, *players)
+func main() {
+	o := parseOptions()
+	rng := rand.New(rand.NewPCG(o.seed, 0x5eed)) //nolint:gosec // G404: fake test data, not security
+	cast := make([]*player, o.players)
 	for i := range cast {
 		cast[i] = newPlayer(rng, i)
 	}
@@ -92,30 +107,34 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-	end := time.Now().Add(*duration)
 	fmt.Printf("seeding %d players (%d Alliance, %d Horde) into %s for %s via %s\n",
-		*players, *players/2, *players-*players/2, rs, *duration, *apiURL)
+		o.players, o.players/2, o.players-o.players/2, o.rs, o.duration, o.apiURL)
+	feed(ctx, o, rng, cast, charts)
+	fmt.Println("done")
+}
 
-	tick := time.NewTicker(*interval)
+// feed posts one ping per interval until the duration is over or ctx is cancelled.
+func feed(ctx context.Context, o options, rng *rand.Rand, cast []*player, charts []domain.Chart) {
+	end := time.Now().Add(o.duration)
+	tick := time.NewTicker(o.interval)
 	defer tick.Stop()
 	for n := 0; ; n++ {
 		now := time.Now()
-		ping := buildPing(rng, rs, cast, charts, now)
-		if err := post(ctx, *apiURL, key, ping); err != nil {
+		ping := buildPing(rng, o.rs, cast, charts, now)
+		if err := post(ctx, o.apiURL, o.key, ping); err != nil {
 			fatalf("tick %d: %v", n, err)
 		}
 		fmt.Printf("%s tick %d: %d contacts, %d kills\n", now.Format("15:04:05"), n, len(ping.Contacts), len(ping.Kills))
-		if !now.Add(*interval).Before(end) {
-			break
+		if !now.Add(o.interval).Before(end) {
+			return
 		}
 		select {
 		case <-ctx.Done():
 			fmt.Println("interrupted")
-			return
+			os.Exit(0)
 		case <-tick.C:
 		}
 	}
-	fmt.Println("done")
 }
 
 var (

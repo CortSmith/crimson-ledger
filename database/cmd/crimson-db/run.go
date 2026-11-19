@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -28,17 +29,18 @@ func run(args []string, out io.Writer) int {
 	global.SetOutput(io.Discard)
 	dbFlag := global.String("db", "", "database path (default: db_path of api.json)")
 	if err := global.Parse(args); err != nil || global.NArg() == 0 {
-		fmt.Fprintln(out, usage)
+		_, _ = fmt.Fprintln(out, usage)
 		return exitUsage
 	}
 	cmd, rest := global.Arg(0), global.Args()[1:]
 	if !knownCommand(cmd) {
-		fmt.Fprintf(out, "unknown command %q\n%s\n", cmd, usage)
+		_, _ = fmt.Fprintf(out, "unknown command %q\n%s\n", cmd, usage)
 		return exitUsage
 	}
 	if err := execute(cmd, rest, *dbFlag, out); err != nil {
-		fmt.Fprintf(out, "crimson-db %s: %v\n", cmd, err)
-		if _, isUsage := err.(usageError); isUsage {
+		_, _ = fmt.Fprintf(out, "crimson-db %s: %v\n", cmd, err)
+		var ue usageError
+		if errors.As(err, &ue) {
 			return exitUsage
 		}
 		return exitError
@@ -74,7 +76,7 @@ func execute(cmd string, rest []string, dbFlag string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	return dispatch(context.Background(), cmd, rest, command{db: db, path: path, retentionDays: cfg.RetentionDays, out: out})
 }
 
@@ -102,7 +104,7 @@ func dispatch(ctx context.Context, name string, rest []string, c command) error 
 		if err := database.Integrity(ctx, c.db); err != nil {
 			return err
 		}
-		fmt.Fprintln(c.out, "ok")
+		_, _ = fmt.Fprintln(c.out, "ok")
 		return nil
 	default: // vacuum
 		return database.Vacuum(ctx, c.db)
@@ -114,7 +116,7 @@ func (c command) status(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(c.out, "%s: schema version %d\n", c.path, v)
+	_, _ = fmt.Fprintf(c.out, "%s: schema version %d\n", c.path, v)
 	return nil
 }
 
@@ -133,7 +135,7 @@ func (c command) backup(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintln(c.out, "backup written:", file)
+	_, _ = fmt.Fprintln(c.out, "backup written:", file)
 	return nil
 }
 
@@ -149,6 +151,6 @@ func (c command) prune(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(c.out, "pruned %d fixes, %d batch ids\n", res.Fixes, res.Batches)
+	_, _ = fmt.Fprintf(c.out, "pruned %d fixes, %d batch ids\n", res.Fixes, res.Batches)
 	return nil
 }

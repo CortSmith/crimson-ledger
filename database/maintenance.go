@@ -73,7 +73,7 @@ func Backup(ctx context.Context, db *sql.DB, destDir string, keep int) (string, 
 	dest := filepath.Join(destDir, "ledger-"+time.Now().UTC().Format(backupLayout)+".db")
 	// VACUUM INTO does not accept a bound parameter on every sqlite version: quote the literal.
 	literal := "'" + strings.ReplaceAll(dest, "'", "''") + "'"
-	if _, err := db.ExecContext(ctx, "VACUUM INTO "+literal); err != nil { // #nosec G202: path is quoted above
+	if _, err := db.ExecContext(ctx, "VACUUM INTO "+literal); err != nil { //nolint:gosec // G202: the path is quoted above
 		return "", fmt.Errorf("backup: %w", err)
 	}
 	if err := os.Chmod(dest, fileMode); err != nil {
@@ -110,7 +110,7 @@ func Integrity(ctx context.Context, db *sql.DB) error {
 	if err != nil {
 		return fmt.Errorf("foreign_key_check: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	if rows.Next() {
 		return fmt.Errorf("foreign_key_check: violations found")
 	}

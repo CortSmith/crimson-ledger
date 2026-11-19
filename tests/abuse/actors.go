@@ -6,6 +6,7 @@ package abuse
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net"
@@ -36,6 +37,29 @@ type Answer struct {
 // RequestID is the server's correlation id.
 func (a Answer) RequestID() string { return a.Header.Get("X-Request-Id") }
 
+// rawRequest renders r as HTTP/1.1 bytes, adding Content-Length only when the caller did not set one.
+func rawRequest(host string, r Raw) []byte {
+	var b bytes.Buffer
+	m := r.Method
+	if m == "" {
+		m = "GET"
+	}
+	fmt.Fprintf(&b, "%s %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n", m, r.Target, host)
+	hasCL := false
+	for _, h := range r.Headers {
+		if strings.EqualFold(h[0], "Content-Length") {
+			hasCL = true
+		}
+		fmt.Fprintf(&b, "%s: %s\r\n", h[0], h[1])
+	}
+	if len(r.Body) > 0 && !hasCL {
+		fmt.Fprintf(&b, "Content-Length: %d\r\n", len(r.Body))
+	}
+	b.WriteString("\r\n")
+	b.Write(r.Body)
+	return b.Bytes()
+}
+
 // SendRaw writes r to host:port (from baseURL) over a fresh TCP connection and reads one response.
 func SendRaw(baseURL string, r Raw) (Answer, error) {
 	u, err := url.Parse(baseURL)
@@ -52,26 +76,9 @@ func SendRaw(baseURL string, r Raw) (Answer, error) {
 	}
 	defer func() { _ = conn.Close() }()
 	_ = conn.SetDeadline(time.Now().Add(20 * time.Second))
-	var b bytes.Buffer
-	m := r.Method
-	if m == "" {
-		m = "GET"
-	}
-	fmt.Fprintf(&b, "%s %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n", m, r.Target, u.Host)
-	hasCL := false
-	for _, h := range r.Headers {
-		if strings.EqualFold(h[0], "Content-Length") {
-			hasCL = true
-		}
-		fmt.Fprintf(&b, "%s: %s\r\n", h[0], h[1])
-	}
-	if len(r.Body) > 0 && !hasCL {
-		fmt.Fprintf(&b, "Content-Length: %d\r\n", len(r.Body))
-	}
-	b.WriteString("\r\n")
-	b.Write(r.Body)
+	b := rawRequest(u.Host, r)
 	start := time.Now()
-	if _, err := conn.Write(b.Bytes()); err != nil {
+	if _, err := conn.Write(b); err != nil {
 		return Answer{}, err
 	}
 	res, err := http.ReadResponse(bufio.NewReader(conn), nil)
@@ -111,7 +118,7 @@ func (a Actor) WithKey(name, key string) Actor { a.Name, a.Key = name, key; retu
 
 // Do sends one request through net/http. headers override the actor's Authorization.
 func (a Actor) Do(method, target string, body []byte, headers map[string]string) (Answer, error) {
-	req, err := http.NewRequest(method, a.Base+target, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(context.Background(), method, a.Base+target, bytes.NewReader(body))
 	if err != nil {
 		return Answer{}, err
 	}

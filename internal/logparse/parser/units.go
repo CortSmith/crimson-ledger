@@ -1,10 +1,14 @@
 package parser
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // Reaction is the unit's disposition towards the log owner.
 type Reaction int
 
+// Reaction values: unknown when the flags carry no disposition, otherwise friendly, neutral or hostile.
 const (
 	ReactionUnknown Reaction = iota
 	ReactionFriendly
@@ -43,6 +47,7 @@ func ReactionOf(flags uint32) Reaction {
 // GUIDKind classifies a GUID by its prefix.
 type GUIDKind int
 
+// GUIDKind values: KindOther is any GUID that is not a player, creature (KindNPC) or pet.
 const (
 	KindOther GUIDKind = iota
 	KindPlayer
@@ -133,24 +138,22 @@ func commonSuffix(names []string) string {
 		}
 	}
 	var best []string
-	for k := 1; k < shortest; k++ {
-		tail := lists[0][len(lists[0])-k:]
-		ok := true
-		for _, l := range lists[1:] {
-			t := l[len(l)-k:]
-			for j := range t {
-				if t[j] != tail[j] {
-					ok = false
-				}
-			}
-		}
-		if !ok {
-			break
-		}
-		best = tail
+	for k := 1; k < shortest && sharesTail(lists, k); k++ {
+		best = lists[0][len(lists[0])-k:]
 	}
 	if len(best) == 0 {
 		return ""
 	}
 	return "-" + strings.Join(best, "-")
+}
+
+// sharesTail reports whether every list ends with the same k tokens as the first one.
+func sharesTail(lists [][]string, k int) bool {
+	tail := lists[0][len(lists[0])-k:]
+	for _, l := range lists[1:] {
+		if !slices.Equal(l[len(l)-k:], tail) {
+			return false
+		}
+	}
+	return true
 }
