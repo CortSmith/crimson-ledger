@@ -73,7 +73,7 @@ func healthURL(cfg config.APIConfig) (string, error) {
 	return scheme + "://" + net.JoinHostPort(host, port) + "/v1/health", nil
 }
 
-// healthClient trusts the API's own certificate (never InsecureSkipVerify) when TLS is on.
+// healthClient trusts only the API's own certificate (certificate verification stays on) when TLS is on.
 func healthClient(cfg config.APIConfig) (*http.Client, error) {
 	c := &http.Client{Timeout: healthTimeout}
 	if cfg.TLSCert == "" {
