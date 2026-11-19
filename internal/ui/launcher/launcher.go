@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"crimsonledger/internal/ui/preflight"
@@ -66,10 +67,18 @@ func resolveNextToSelf(ui string) (string, error) {
 	return resolveIn(filepath.Dir(self), ui)
 }
 
+// uiFile is the file name of a UI binary on goos: Windows executables carry the .exe suffix.
+func uiFile(name, goos string) string {
+	if goos == "windows" && !strings.HasSuffix(name, ".exe") {
+		return name + ".exe"
+	}
+	return name
+}
+
 // resolveIn returns <dir>/lib/<name> and refuses any name that escapes that directory or does not exist.
 func resolveIn(dir, name string) (string, error) {
 	libDir := filepath.Join(dir, "lib")
-	p := filepath.Join(libDir, name)
+	p := filepath.Join(libDir, uiFile(name, runtime.GOOS))
 	if filepath.IsAbs(name) || !strings.HasPrefix(p, libDir+string(filepath.Separator)) {
 		return "", errors.New("the UI program path is outside the install folder")
 	}

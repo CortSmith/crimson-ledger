@@ -3,6 +3,7 @@ package launcher
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -51,13 +52,13 @@ func TestExecUI_NotExecutable(t *testing.T) {
 
 func TestResolveIn_OK(t *testing.T) {
 	got, err := resolveIn("/opt/app", "scout-ui")
-	if err != nil || got != filepath.Join("/opt/app", "lib", "scout-ui") {
+	if err != nil || got != filepath.Join("/opt/app", "lib", uiFile("scout-ui", runtime.GOOS)) {
 		t.Fatalf("%q %v", got, err)
 	}
 }
 
 func TestResolveNextToSelf(t *testing.T) {
-	if p, err := resolveNextToSelf("x-ui"); err != nil || filepath.Base(p) != "x-ui" {
+	if p, err := resolveNextToSelf("x-ui"); err != nil || filepath.Base(p) != uiFile("x-ui", runtime.GOOS) {
 		t.Fatalf("%q %v", p, err)
 	}
 }
@@ -66,5 +67,18 @@ func TestRun_Public_MissingUI(t *testing.T) {
 	// The test binary has no lib/ sibling; preflight passes only where WebKit exists, otherwise 78. Either is a refusal.
 	if code := Run("A", "x-ui", nil); code == ExitOK {
 		t.Fatalf("code %d", code)
+	}
+}
+
+func TestUIFile(t *testing.T) {
+	for _, c := range []struct{ name, goos, want string }{
+		{"crimson-ledger-ui", "windows", "crimson-ledger-ui.exe"},
+		{"crimson-ledger-ui.exe", "windows", "crimson-ledger-ui.exe"},
+		{"crimson-ledger-ui", "linux", "crimson-ledger-ui"},
+		{"crimson-ledger-ui", "darwin", "crimson-ledger-ui"},
+	} {
+		if got := uiFile(c.name, c.goos); got != c.want {
+			t.Errorf("uiFile(%q, %q) = %q, want %q", c.name, c.goos, got, c.want)
+		}
 	}
 }
