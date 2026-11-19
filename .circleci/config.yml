@@ -4,7 +4,7 @@ orbs:
   win: circleci/windows@5.1.1
 
 # Crimson Ledger pipeline: jobs check, build-linux, windows-smoke, build-macos, app-release.
-# Tags `vX.Y.Z` run everything; branches run only check. macOS minutes cost credits: build-macos is tags only.
+# The workflow runs only for `vX.Y.Z` tags; branch pushes build nothing.
 commands:
   app-setup:
     steps:
@@ -64,9 +64,9 @@ jobs:
 workflows:
   app:
     jobs:
-      - check: {filters: {tags: {only: /^v.*/}}}
-      - build-linux: {requires: [check], filters: {tags: {only: /^v.*/}}}
-      - windows-smoke: {requires: [build-linux], filters: {tags: {only: /^v.*/}}}
+      - check: {filters: {tags: {only: /^v\d+\.\d+\.\d+$/}, branches: {ignore: /.*/}}}
+      - build-linux: {requires: [check], filters: {tags: {only: /^v\d+\.\d+\.\d+$/}, branches: {ignore: /.*/}}}
+      - windows-smoke: {requires: [build-linux], filters: {tags: {only: /^v\d+\.\d+\.\d+$/}, branches: {ignore: /.*/}}}
       - build-macos:
           requires: [check]
           filters: {tags: {only: /^v\d+\.\d+\.\d+$/}, branches: {ignore: /.*/}}

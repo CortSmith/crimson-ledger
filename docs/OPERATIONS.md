@@ -51,9 +51,9 @@ After a rotation, paste the new key into the app and press **Test connection**.
 
 ## What a release costs in CI (free plan)
 
-A tag `vX.Y.Z` runs five jobs. The macOS job is the only one that uses paid-tier credits and it runs on tags only.
+A tag `vX.Y.Z` runs five jobs. The macOS job is the only one that uses paid-tier credits.
 Check the current credit rate of the macOS resource class in your CircleCI plan page; a build should stay under 5 minutes.
-Branch pushes run only the `check` job.
+Branch pushes build nothing; run `scripts/check.sh` or `make check` locally before tagging.
 
 ## Releasing
 
