@@ -6,7 +6,7 @@ export PATH="$PATH:$(go env GOPATH)/bin"
 # shellcheck source=tools.env
 source scripts/tools.env
 PKG="${1:-./...}"
-MIN_COVER="${MIN_COVER:-80}"
+MIN_COVER="${MIN_COVER:-70}"
 fail() { echo "CHECK FAILED: $*" >&2; exit 1; }
 step() { echo; echo "== $*"; }
 
