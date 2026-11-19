@@ -59,7 +59,7 @@ func TestCI_ReleaseIsProtected(t *testing.T) {
 	if b, _ := f["branches"].(map[string]any); b == nil || b["ignore"] == nil || f["tags"] == nil {
 		t.Fatal("app-release must run for tags only")
 	}
-	for _, name := range []string{"windows-smoke", "build-macos"} {
+	for _, name := range []string{"build-linux", "build-windows", "build-macos"} {
 		if !strings.Contains(strings.Join(toStrings(j["requires"]), ","), name) {
 			t.Fatalf("app-release must wait for %s", name)
 		}

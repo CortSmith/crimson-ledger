@@ -3,7 +3,7 @@ version: 2.1
 orbs:
   win: circleci/windows@5.1.1
 
-# Crimson Ledger pipeline: jobs check, build-linux, windows-smoke, build-macos, app-release.
+# Crimson Ledger pipeline: jobs check, build-linux, build-windows, build-macos, app-release.
 # The workflow runs only for `vX.Y.Z` tags; branch pushes build nothing.
 commands:
   app-setup:
@@ -25,13 +25,33 @@ jobs:
       - run:
           name: Build Linux, Windows and Lambda artifacts
           command: docker build -f Dockerfile.build --target artifacts --build-arg VERSION="$(cat VERSION)" --output type=local,dest=dist .
-      - persist_to_workspace: {root: ., paths: [dist]}
-  windows-smoke:
+      - persist_to_workspace: {root: ., paths: [dist/linux-*, dist/lambda]}
+  build-windows:
     executor: {name: win/default}
     steps:
       - checkout
-      - attach_workspace: {at: .}
-      - run: {name: Selftest on a Windows machine with WebView2, shell: powershell.exe, command: scripts\windows-smoke.ps1 dist\windows-amd64}
+      - run:
+          name: Install Go 1.26.11 (checksum pinned)
+          shell: powershell.exe
+          command: |
+            $ErrorActionPreference = 'Stop'
+            Invoke-WebRequest https://go.dev/dl/go1.26.11.windows-amd64.zip -OutFile $env:TEMP\go.zip
+            if ((Get-FileHash $env:TEMP\go.zip -Algorithm SHA256).Hash -ne '71ae086f0137e665f855a811cc119152b6a783e0bbc1b906e709f46d80141eb0') { throw 'go.zip checksum mismatch' }
+            Remove-Item -Recurse -Force C:\go -ErrorAction SilentlyContinue
+            Expand-Archive $env:TEMP\go.zip -DestinationPath C:\
+            [Environment]::SetEnvironmentVariable('PATH', "C:\go\bin;" + $env:PATH, 'Process')
+            C:\go\bin\go.exe version
+      - run:
+          name: Build the Windows binaries natively
+          shell: powershell.exe
+          command: |
+            $env:PATH = "C:\go\bin;" + $env:PATH
+            scripts\build-windows.ps1 (Get-Content VERSION).Trim()
+      - run:
+          name: Selftest on a Windows machine with WebView2
+          shell: powershell.exe
+          command: scripts\windows-smoke.ps1 dist\windows-amd64
+      - persist_to_workspace: {root: ., paths: [dist/windows-amd64]}
   build-macos:
     macos: {xcode: "16.4.0"}
     resource_class: m4pro.medium
@@ -74,11 +94,11 @@ workflows:
     jobs:
       - check: {filters: {tags: {only: /^v\d+\.\d+\.\d+$/}, branches: {ignore: /.*/}}}
       - build-linux: {requires: [check], filters: {tags: {only: /^v\d+\.\d+\.\d+$/}, branches: {ignore: /.*/}}}
-      - windows-smoke: {requires: [build-linux], filters: {tags: {only: /^v\d+\.\d+\.\d+$/}, branches: {ignore: /.*/}}}
+      - build-windows: {requires: [check], filters: {tags: {only: /^v\d+\.\d+\.\d+$/}, branches: {ignore: /.*/}}}
       - build-macos:
           requires: [check]
           filters: {tags: {only: /^v\d+\.\d+\.\d+$/}, branches: {ignore: /.*/}}
       - app-release:
           context: app-release
-          requires: [windows-smoke, build-macos]
+          requires: [build-linux, build-windows, build-macos]
           filters: {tags: {only: /^v\d+\.\d+\.\d+$/}, branches: {ignore: /.*/}}
