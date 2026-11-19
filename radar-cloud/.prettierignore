@@ -1,7 +1,0 @@
-node_modules
-cdk.out
-out
-dev/.data.json
-site/maps
-*.min.js
-package-lock.json

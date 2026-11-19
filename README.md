@@ -1,111 +1,32 @@
-# Nearby Tracker (companion app for WoW Forever)
+# Crimson Ledger
 
-Reads the game's combat log file while you play and shows a radar-style web page with:
+A native desktop viewer (Linux, Windows, macOS) and a live logging client for World of Warcraft combat logs,
+talking to an API you can run on your own machine or on AWS.
 
-- every player the log has mentioned, split into **Friendly** and **Neutral / hostile**,
-- a radar-style map with a pin at the last place each player was detected, which moves when they are detected again,
-- click a name or a pin to copy `/target First Last`, then paste it into WoW chat yourself.
+| Part | What it is |
+|---|---|
+| `crimson-ledger` | the viewer window; reads everything from the API |
+| `crimson-scout` | reads your combat log and uploads it live |
+| `crimson-api`, `crimson-db` | the API server and its database tools |
 
-It only reads a text file. It never sends anything to the game.
+## 5 minutes
 
-## Three versions in this folder
+1. Download your system's package from the releases page and [check it](docs/INSTALL.md#1-check-your-download).
+2. Start the API: `./crimson-api keys create --scope ingest --label me`, `... --scope view ...`, then `./crimson-api serve`.
+3. Start `crimson-scout`, paste address and ingest key, press **Test connection**, then **Start**.
+4. Start `crimson-ledger`, paste address and view key.
 
-| Version | Folder | What it is | Docs |
-|---|---|---|---|
-| **Python** | `nearby_tracker.py`, `start.bat` | The original. One script, nothing to install but Python. Local-only page on `127.0.0.1:8777`. Includes the Heatmap. | This file, below |
-| **Go** | `go-radar/` | Desktop app (single `radar.exe`, WebView2 window). Adds persistent history and tracks, player search, bounty ranking and per-server rule-sets (normal, PvP, RP, RP-PvP). | [go-radar/README.md](go-radar/README.md) |
-| **Cloud** | `radar-cloud/` | The Go app's features as a hosted AWS (CDK) site: log in with username, password and API key, store history, tracks and bounty in your own account, view from any browser. Logs are parsed in the browser and only small per-player summaries are uploaded. Built to cost well under $1/month. | [radar-cloud/README.md](radar-cloud/README.md) |
+## Docs
 
-Shared pieces: the `maps/` folder (zone images, made with `extract_maps.py`) is used by all three. The cloud
-version ships a compressed WebP copy of the maps in `radar-cloud/site/maps/`.
+- [INSTALL.md](docs/INSTALL.md): per-system install, required libraries, first run, uninstall
+- [OPERATIONS.md](docs/OPERATIONS.md): run the API, deploy to AWS, backups, keys, upgrades, releasing
+- [PLAN.md](docs/PLAN.md): design and task list
 
-Not every feature exists in every version:
+## Build
 
-| Feature | Python | Go | Cloud |
-|---|---|---|---|
-| Live radar from the log file | yes | yes | yes (Chrome/Edge folder watching) |
-| Zone map images | yes | yes | yes |
-| Heatmap | yes | no | no |
-| History, tracks, search | no | yes | yes |
-| Bounty ranking, rule-sets | no | yes | yes |
-| Accounts / API keys / stored in the cloud | no | no | yes |
-| Static ads column | no | no | yes |
-| Timestamps stored as UTC, shown in your chosen time zone | no | no | yes |
+`make check` (needs Go and the dev tools), `make dist` (Docker: Linux, Windows and Lambda artifacts into `dist/`),
+`scripts/build-macos.sh` on a Mac, then `scripts/package.sh <version>`.
 
-### Try the cloud version without AWS
-Double-click `radar-cloud\run-local.bat` (add `--sim` for simulated live data), then open
-`http://127.0.0.1:8787` and log in with `demo` / `demo-password-1` and API key `dev-key-0001`. It needs no npm,
-only a `node` executable (it falls back to the one bundled with VS Code). Deploying to AWS is covered in
-[radar-cloud/README.md](radar-cloud/README.md); nothing has been deployed yet.
+## Zone maps
 
-## Python version
-
-### Run
-1. In game: `/combatlog` (also make sure Advanced Combat Logging is on, it carries the positions).
-2. Install Python 3.9+ if you don't have it. Nothing else to install.
-3. Double-click `start.bat` (or `python nearby_tracker.py`). Your browser opens `http://127.0.0.1:8777/`.
-
-The log folder defaults to `C:\Program Files (x86)\World of Warcraft\_forever_\Logs`.
-Use `--logs "D:\path\to\Logs"` if yours is elsewhere. The newest `WoWCombatLog*.txt` is followed, and a new file
-(after `/combatlog` off/on or a relog) is picked up automatically.
-
-Options: `--port 8777`, `--keep 60` (forget players unseen for N minutes), `--from-start` (read the whole
-current log), `--realm-suffix -PvP-US` (normally auto-detected), `--dump` (print every parsed event, for
-checking the format), `--no-browser`.
-
-### Reading the page
-- **Names:** the log writes `Mc-Cheeki-PvP-US`. The realm part is detected and removed and `-` becomes a space,
-  so you get the in-game name `Mc Cheeki`.
-- **Solid dot = exact position.** The log gives a unit's coordinates only on events where that unit is the
-  main subject (they cast, they swing, they get hit). Idle players don't produce positions.
-- **Dashed ring with `?` = approximate.** The player was named by the log without a position, so the ring is
-  drawn where *you* were at that moment, sized by "Log range". They were somewhere inside it. The list shows
-  `≤ N yd` for these (distance to the ring plus its radius).
-- Pins fade with age and disappear after "Forget after" minutes. A newer sighting always replaces the old pin.
-- Your own position updates whenever the log has an event about you. If you stand still and idle it can go stale.
-- Mouse wheel zooms, drag pans, "Follow me" keeps you centred, "Fit zone" shows the whole zone outline.
-- The default orientation is X = north, Y = west (the usual world-coordinate layout). If pins move the
-  wrong way when you run north, switch "Orientation".
-- Friendly vs neutral/hostile comes from the log's reaction flags (`0x10` friendly, `0x20` neutral, `0x40` hostile).
-  A player's flag can change between events, and the newest one is used. Check one name in game to confirm
-  which group is which faction for you.
-
-### Zone maps (personal use)
-The page shows the map image of the zone you are in and switches when you change zone (the log's `MAP_CHANGE`
-line gives the zone name, and the image is stretched to the zone's coordinate rectangle). Untick **Map** to hide it.
-
-Make the images once with `extract_maps.py`, which reads the game's own `Data` folder (CASC) and writes
-`maps\<Zone>.png` plus `maps\index.json` next to the script. The base art is the blank "unexplored" parchment, so the
-script also paints the game's exploration overlays on top (read from the same install), giving a fully revealed map.
-Use `--no-overlays` to skip that. Zones already done are skipped; zones saved without overlays are redone.
-1. `py -m pip install pillow`
-2. `py extract_maps.py` (add `--only "Dun Morogh,Elwynn Forest"` to do a few zones, `--force` to redo).
-   Defaults: `--wow "C:\Program Files (x86)\World of Warcraft\_forever_"`, `--out maps`.
-- Tiles the client has not stored locally are downloaded from Blizzard's CDN (internet needed). If you only
-  want local files, add `--no-cdn`. Opening the world map in game for a zone may make the client cache it.
-- `py extract_maps.py --world` (run after the step above) places each known zone inside its continent's image,
-  writing `maps\world\<Continent>.png` plus `maps\world\index.json` (zone pixel rectangles) for a future
-  world/"All Zones" map view.
-- Zones missing from `maps` simply show no image. Dots, names and heat are always drawn above the map.
-- For your own use only; don't share the extracted images.
-
-### Heatmap (where players probably are now)
-Turn it on with **Heatmap** and pick whose blobs to show (Neutral / hostile by default).
-- Each player with a known position gets one small blob (about 25 yd across the map, kept small on screen).
-- **Red = just seen, shifting to blue as time passes, gone after 5 minutes.** The last minute fades out.
-- The blob sits on the best guess for where they are now: the weighted average of their **last N located events**
-  (default 15, the *Events* box) inside their current **encounter**. An encounter runs from when you first saw
-  events from them until they went quiet. If two events are further apart than *Encounter gap* (default 30 s),
-  everything before the gap is ignored.
-- Exact positions count fully, approximate ones count much less, newer events count more. If the exact fixes show
-  them moving, the guess leans a little ahead along that path (at most 10 s, at most 30 yd/s).
-- Players with only approximate sightings (no exact position at all) get no blob, just their dashed ring.
-- Hover a name in the list to see the single best guess (`est. +/- N yd` is how spread out their recent events were).
-  "Fit players" zooms to show everyone tracked.
-- It is a heuristic, not a real tracker: it can't know about turns, mounts or stealth between events.
-- Dots and names are always drawn above the heat.
-
-### Limits
-- Only players who do something (cast, hit, buff, die) ever show up. Silent bystanders are invisible to the log.
-- Map artwork only appears after you run `extract_maps.py` (see "Zone maps" above). Without it you get the zone outline and a grid.
-- Positions are only valid within one zone, so the page shows pins for your current zone.
+`maps/` holds the source zone PNGs (made with `extract_maps.py` from a game install). `scripts/maps-to-webp.sh` (or `.py`) converts them to the WebP files the viewer bundles in `viewer/maps/`.

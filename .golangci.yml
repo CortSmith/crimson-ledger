@@ -1,0 +1,36 @@
+version: "2"
+run:
+  timeout: 5m
+  tests: true
+linters:
+  default: none
+  enable:
+    - gosec
+    - errcheck
+    - govet
+    - staticcheck
+    - revive
+    - gocyclo
+    - gocognit
+    - funlen
+    - nestif
+    - misspell
+    - unparam
+    - ineffassign
+    - errorlint
+    - bodyclose
+    - noctx
+  settings:
+    gocyclo:
+      min-complexity: 12
+    gocognit:
+      min-complexity: 15
+    funlen:
+      lines: 40
+      statements: -1
+  exclusions:
+    paths:
+      - scripts/poc
+    rules:
+      - path: _test\.go
+        linters: [funlen, gocognit, gosec]

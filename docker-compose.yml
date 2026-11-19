@@ -1,0 +1,69 @@
+name: crimson-ledger
+
+# Hardening shared by every runtime service of the API image.
+x-hardened: &hardened
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  tmpfs: ["/tmp"]
+  # The host's own uid owns ~/.crimson-ledger (mode 0700), so the container must run as that uid. `make` exports CL_UID/CL_GID.
+  user: "${CL_UID:-1000}:${CL_GID:-1000}"
+
+x-home: &home ["${CL_HOME:-${HOME}/.crimson-ledger}:/home/nonroot/.crimson-ledger"]
+
+x-toolbox: &toolbox
+  build: {context: ., dockerfile: Dockerfile.build, target: tools}
+  working_dir: /src
+  volumes: [".:/src"]
+
+services:
+  api:                    # docker compose up -d api               local hosting, SQLite under ~/.crimson-ledger
+    build: {context: ., dockerfile: Dockerfile.api}
+    image: crimson-ledger-api
+    <<: *hardened
+    ports: ["127.0.0.1:8443:8443"]   # loopback on the host only
+    volumes: *home
+    restart: unless-stopped
+
+  keys:                   # docker compose run --rm keys create --scope view --label laptop
+    image: crimson-ledger-api
+    <<: *hardened
+    entrypoint: ["/usr/local/bin/crimson-api", "keys"]
+    volumes: *home
+    profiles: [tools]
+
+  db:                     # docker compose run --rm db backup | check | prune | status
+    image: crimson-ledger-api
+    <<: *hardened
+    entrypoint: ["/usr/local/bin/crimson-db"]
+    volumes: *home
+    profiles: [tools]
+
+  dynamodb-local:
+    profiles: ["test"]
+    image: amazon/dynamodb-local@sha256:6ada631ec7aa5fc83446855eb17233e3dad184fec47477e8140c6c569cfe0c86
+    command: ["-jar", "DynamoDBLocal.jar", "-inMemory", "-sharedDb"]
+    ports:
+      - "127.0.0.1:8000:8000"
+
+  test:                   # docker compose --profile test run --rm test     unit tests with -race, DynamoDB included
+    <<: *toolbox
+    command: ["go", "test", "-race", "./..."]
+    environment: {DYNAMODB_ENDPOINT: "http://dynamodb-local:8000", AWS_ACCESS_KEY_ID: x, AWS_SECRET_ACCESS_KEY: x, AWS_REGION: us-east-1}
+    depends_on: [dynamodb-local]
+    profiles: [test]
+
+  check:                  # docker compose --profile test run --rm check    the AUDIT gate
+    <<: *toolbox
+    command: ["scripts/check.sh", "./..."]
+    profiles: [test]
+
+  build:                  # docker compose --profile build run --rm build   Linux + Windows + Lambda into ./dist
+    <<: *toolbox
+    command: ["scripts/build-all.sh", "dev"]
+    profiles: [build]
+
+  lambda-package:         # docker compose --profile build run --rm lambda-package
+    <<: *toolbox
+    command: ["scripts/build-lambda.sh"]
+    profiles: ["build"]

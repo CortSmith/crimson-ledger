@@ -1,0 +1,45 @@
+<main>
+  <h1>Crimson Scout</h1>
+  <section id="status" aria-live="polite">
+    <div class="line"><span id="dot" class="dot idle"></span><strong id="state">Idle</strong><span id="reason"></span></div>
+    <div class="buttons">
+      <button id="toggle" type="button">Start</button>
+    </div>
+    <dl class="counters">
+      <div><dt>Lines read</dt><dd id="c-lines">0</dd></div>
+      <div><dt>Contacts</dt><dd id="c-contacts">0</dd></div>
+      <div><dt>Batches sent</dt><dd id="c-sent">0</dd></div>
+      <div><dt>Waiting</dt><dd id="c-queued">0</dd></div>
+      <div><dt>Last success</dt><dd id="c-last">never</dd></div>
+    </dl>
+  </section>
+
+  <section id="settings">
+    <h2>Settings</h2>
+    <label>Server address<input id="serverUrl" type="url" autocomplete="off" spellcheck="false"></label>
+    <label>API key<div id="keyHost"></div></label>
+    <label>Source name<input id="source_name" type="text" maxlength="32" autocomplete="off"></label>
+    <label>Combat log folder
+      <div class="row"><input id="logs_dir" type="text" autocomplete="off" spellcheck="false"><button id="pick" type="button">Browse</button></div>
+    </label>
+    <label>Realm type
+      <select id="ruleset">
+        <option value="auto">Detect automatically</option><option value="normal">Normal</option>
+        <option value="pvp">PvP</option><option value="rp">RP</option><option value="rppvp">RP-PvP</option>
+      </select>
+    </label>
+    <label>Upload every (milliseconds)<input id="upload_interval_ms" type="number" min="500" max="60000" step="100"></label>
+    <label>Extra certificate file (optional)<input id="caFile" type="text" autocomplete="off" spellcheck="false"></label>
+    <div class="buttons">
+      <button id="save" type="button">Save</button>
+      <button id="test" type="button">Test connection</button>
+    </div>
+    <p id="msg" role="status"></p>
+    <p class="file" id="file"></p>
+  </section>
+
+  <section>
+    <h2>Activity</h2>
+    <ul id="activity"></ul>
+  </section>
+</main>

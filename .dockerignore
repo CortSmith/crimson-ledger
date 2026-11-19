@@ -1,0 +1,10 @@
+.git
+dist
+api/build
+*.db
+*.db-*
+.it-keys.env
+scripts/poc
+cover.out
+*.exe
+*.test

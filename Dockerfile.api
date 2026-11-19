@@ -1,0 +1,35 @@
+# syntax=docker/dockerfile:1.7
+# One image for local hosting: the pure-Go API plus crimson-db. The database is the SQLite file under the mounted home.
+ARG GO_IMAGE=golang:1.25-bookworm@sha256:3b4a11519ad929d1e1d261a12cff056f0c85b735253d7d861346b9c6f8b36437
+ARG RUN_IMAGE=gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab
+
+FROM ${GO_IMAGE} AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod go mod download && go mod verify
+COPY . .
+ARG VERSION=dev
+ARG TARGETOS TARGETARCH
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
+    go build -trimpath -ldflags="-s -w -X main.version=$VERSION" -o /out/crimson-api ./api/cmd/crimson-api
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
+    go build -trimpath -ldflags="-s -w" -o /out/crimson-db ./database/cmd/crimson-db
+
+RUN mkdir -p /out/home/nonroot/.crimson-ledger
+
+FROM ${RUN_IMAGE}
+COPY --from=build /out/crimson-api /out/crimson-db /usr/local/bin/
+# distroless ships /home/nonroot as 0700; compose runs the container as the host uid, which must be able to reach the mount.
+COPY --from=build --chown=65532:65532 --chmod=0755 /out/home /home
+# The in-container bind is 0.0.0.0; compose publishes it on the host loopback only (see docker-compose.yml).
+ENV HOME=/home/nonroot \
+    CRIMSON_LEDGER_HOME=/home/nonroot/.crimson-ledger \
+    CRIMSON_LEDGER_BEHIND_CONTAINER=1
+VOLUME ["/home/nonroot/.crimson-ledger"]
+EXPOSE 8443
+USER nonroot:nonroot
+ENTRYPOINT ["/usr/local/bin/crimson-api"]
+CMD ["serve", "--listen", "0.0.0.0:8443"]
+HEALTHCHECK --interval=30s --timeout=3s CMD ["/usr/local/bin/crimson-api", "healthcheck"]

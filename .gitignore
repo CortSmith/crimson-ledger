@@ -3,3 +3,10 @@ node_modules/
 *.log
 __pycache__/
 .venv/
+dist/
+cover.out
+*.exe
+*.test
+api/build/
+.it-keys.env
+.it-stack.json

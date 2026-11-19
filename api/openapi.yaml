@@ -1,0 +1,195 @@
+openapi: 3.1.0
+info:
+  title: Crimson Ledger API
+  version: 1.0.0
+  description: Contract of PLAN.md section 5 (frozen wire names). Drives the T18 suite and Schemathesis.
+servers: [{url: http://127.0.0.1:8443}]
+security: [{bearer: []}]
+components:
+  securitySchemes:
+    bearer: {type: http, scheme: bearer}
+  schemas:
+    Ruleset: {type: string, enum: [normal, pvp, rp, rppvp]}
+    Guid: {type: string, pattern: '^(Player|Creature|Pet|Vehicle)-\d+-[0-9A-F]{4,16}$'}
+    Reaction: {type: string, enum: [friendly, hostile, neutral]}
+    FixKind: {type: string, enum: [exact, approx]}
+    Coord: {type: number, minimum: 0, maximum: 100}
+    Fix:
+      type: object
+      additionalProperties: false
+      required: [t, mapId, x, y, kind]
+      properties: {t: {type: integer}, mapId: {type: integer, minimum: 1}, x: {$ref: '#/components/schemas/Coord'}, y: {$ref: '#/components/schemas/Coord'}, kind: {$ref: '#/components/schemas/FixKind'}}
+    Contact:
+      type: object
+      additionalProperties: false
+      required: [guid, name, raw, reaction, lastSeen, fixes]
+      properties:
+        guid: {$ref: '#/components/schemas/Guid'}
+        name: {type: string, minLength: 1, maxLength: 24}
+        raw: {type: string, maxLength: 64}
+        reaction: {$ref: '#/components/schemas/Reaction'}
+        lastSeen: {type: integer}
+        fixes: {type: array, maxItems: 50, items: {$ref: '#/components/schemas/Fix'}}
+    Chart:
+      type: object
+      additionalProperties: false
+      required: [mapId, zone, x0, y0, x1, y1]
+      properties: {mapId: {type: integer}, zone: {type: string}, x0: {type: number}, y0: {type: number}, x1: {type: number}, y1: {type: number}}
+    Kill:
+      type: object
+      additionalProperties: false
+      required: [t, killer, victim, mapId]
+      properties: {t: {type: integer}, killer: {$ref: '#/components/schemas/Guid'}, victim: {$ref: '#/components/schemas/Guid'}, mapId: {type: integer}}
+    Ping:
+      type: object
+      additionalProperties: false
+      required: [batchId, source, ruleset, sentAt, contacts, charts, kills]
+      properties:
+        batchId: {type: string, format: uuid}
+        source: {type: string, pattern: '^[A-Za-z0-9_.-]{1,32}$'}
+        ruleset: {$ref: '#/components/schemas/Ruleset'}
+        sentAt: {type: integer}
+        contacts: {type: array, maxItems: 200, items: {$ref: '#/components/schemas/Contact'}}
+        charts: {type: array, maxItems: 50, items: {$ref: '#/components/schemas/Chart'}}
+        kills: {type: array, maxItems: 200, items: {$ref: '#/components/schemas/Kill'}}
+    Accepted:
+      oneOf:
+        - type: object
+          required: [accepted, contacts, fixes, kills]
+          properties: {accepted: {const: true}, contacts: {type: integer}, fixes: {type: integer}, kills: {type: integer}}
+        - type: object
+          required: [accepted, duplicate]
+          properties: {accepted: {const: false}, duplicate: {const: true}}
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, requestId]
+          properties:
+            code: {type: string, enum: [invalid_request, invalid_ping, unauthorized, forbidden, key_disabled, not_found, method_not_allowed, too_large, unsupported_media_type, rate_limited, unavailable, internal]}
+            message: {type: string}
+            requestId: {type: string}
+    SweepContact:
+      type: object
+      required: [guid, name, reaction, lastSeen, mapId, x, y, kind]
+      properties:
+        guid: {$ref: '#/components/schemas/Guid'}
+        name: {type: string}
+        reaction: {$ref: '#/components/schemas/Reaction'}
+        lastSeen: {type: integer}
+        mapId: {type: integer}
+        x: {$ref: '#/components/schemas/Coord'}
+        y: {$ref: '#/components/schemas/Coord'}
+        kind: {$ref: '#/components/schemas/FixKind'}
+    Sweep:
+      type: object
+      required: [serverTime, ruleset, contacts]
+      properties: {serverTime: {type: integer}, ruleset: {$ref: '#/components/schemas/Ruleset'}, contacts: {type: array, items: {$ref: '#/components/schemas/SweepContact'}}}
+    Players:
+      type: object
+      required: [players]
+      properties:
+        players:
+          type: array
+          items:
+            type: object
+            required: [guid, name, reaction, fixes, firstSeen, lastSeen]
+            properties: {guid: {$ref: '#/components/schemas/Guid'}, name: {type: string}, reaction: {$ref: '#/components/schemas/Reaction'}, fixes: {type: integer}, firstSeen: {type: integer}, lastSeen: {type: integer}}
+    Trail:
+      type: object
+      required: [guid, name, total, maps, fixes]
+      properties:
+        guid: {$ref: '#/components/schemas/Guid'}
+        name: {type: string}
+        total: {type: integer}
+        maps: {type: array, items: {type: object, required: [mapId, zone, count], properties: {mapId: {type: integer}, zone: {type: string}, count: {type: integer}}}}
+        fixes: {type: array, items: {$ref: '#/components/schemas/Fix'}}
+    Bounty:
+      type: object
+      required: [ranking]
+      properties: {ranking: {type: array, items: {type: object, required: [guid, name, kills, lastKill], properties: {guid: {$ref: '#/components/schemas/Guid'}, name: {type: string}, kills: {type: integer}, lastKill: {type: integer}}}}}
+    Charts:
+      type: object
+      required: [charts]
+      properties: {charts: {type: array, items: {$ref: '#/components/schemas/Chart'}}}
+  responses:
+    Err:
+      description: Error
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+  parameters:
+    ruleset: {name: ruleset, in: query, required: true, schema: {$ref: '#/components/schemas/Ruleset'}}
+paths:
+  /v1/health:
+    get:
+      security: []
+      responses:
+        '200': {description: ok, content: {application/json: {schema: {type: object, additionalProperties: false, required: [ok, version], properties: {ok: {const: true}, version: {type: string}}}}}}
+  /v1/pings:
+    post:
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/Ping'}}}}
+      responses:
+        '200': {description: accepted or duplicate, content: {application/json: {schema: {$ref: '#/components/schemas/Accepted'}}}}
+        '400': {$ref: '#/components/responses/Err'}
+        '401': {$ref: '#/components/responses/Err'}
+        '403': {$ref: '#/components/responses/Err'}
+        '413': {$ref: '#/components/responses/Err'}
+        '415': {$ref: '#/components/responses/Err'}
+        '429': {$ref: '#/components/responses/Err'}
+  /v1/sweep:
+    get:
+      parameters:
+        - $ref: '#/components/parameters/ruleset'
+        - {name: zone, in: query, schema: {type: integer, minimum: 1}}
+        - {name: guid, in: query, schema: {$ref: '#/components/schemas/Guid'}}
+        - {name: maxAgeSec, in: query, schema: {type: integer, minimum: 1}}
+      responses:
+        '200': {description: ok, headers: {ETag: {schema: {type: string}}}, content: {application/json: {schema: {$ref: '#/components/schemas/Sweep'}}}}
+        '304': {description: not modified}
+        '400': {$ref: '#/components/responses/Err'}
+        '401': {$ref: '#/components/responses/Err'}
+        '403': {$ref: '#/components/responses/Err'}
+        '429': {$ref: '#/components/responses/Err'}
+  /v1/players:
+    get:
+      parameters:
+        - $ref: '#/components/parameters/ruleset'
+        - {name: q, in: query, required: true, schema: {type: string, minLength: 2, maxLength: 64}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 50}}
+      responses:
+        '200': {description: ok, content: {application/json: {schema: {$ref: '#/components/schemas/Players'}}}}
+        '400': {$ref: '#/components/responses/Err'}
+        '401': {$ref: '#/components/responses/Err'}
+        '403': {$ref: '#/components/responses/Err'}
+  /v1/players/{guid}/trail:
+    get:
+      parameters:
+        - {name: guid, in: path, required: true, schema: {$ref: '#/components/schemas/Guid'}}
+        - $ref: '#/components/parameters/ruleset'
+        - {name: map, in: query, schema: {type: integer}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 2000}}
+        - {name: since, in: query, schema: {type: integer}}
+      responses:
+        '200': {description: ok, content: {application/json: {schema: {$ref: '#/components/schemas/Trail'}}}}
+        '400': {$ref: '#/components/responses/Err'}
+        '401': {$ref: '#/components/responses/Err'}
+        '403': {$ref: '#/components/responses/Err'}
+        '404': {$ref: '#/components/responses/Err'}
+  /v1/bounty:
+    get:
+      parameters:
+        - $ref: '#/components/parameters/ruleset'
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100}}
+      responses:
+        '200': {description: ok, content: {application/json: {schema: {$ref: '#/components/schemas/Bounty'}}}}
+        '400': {$ref: '#/components/responses/Err'}
+        '401': {$ref: '#/components/responses/Err'}
+        '403': {$ref: '#/components/responses/Err'}
+  /v1/charts:
+    get:
+      responses:
+        '200': {description: ok, headers: {ETag: {schema: {type: string}}}, content: {application/json: {schema: {$ref: '#/components/schemas/Charts'}}}}
+        '304': {description: not modified}
+        '401': {$ref: '#/components/responses/Err'}
+        '403': {$ref: '#/components/responses/Err'}

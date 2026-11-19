@@ -1,0 +1,70 @@
+<header>
+  <div class="title"><span id="dot" class="dot connecting" title="connection"></span><strong>Crimson Ledger</strong><span id="updated" class="muted"></span></div>
+  <div class="controls">
+    <label>Map <select id="mapSel"><option value="0">Auto (follow data)</option></select></label>
+    <span class="chips" role="group" aria-label="Show">
+      <button id="fFriendly" class="chip friendly" type="button" aria-pressed="true">Friendly</button>
+      <button id="fHostile" class="chip hostile" type="button" aria-pressed="true">Hostile</button>
+      <button id="fNeutral" class="chip neutral" type="button" aria-pressed="true">Neutral</button>
+    </span>
+    <span id="rsBadge" class="muted" title="Change in Settings, Display"></span>
+    <button id="settingsBtn" type="button">Settings</button>
+  </div>
+</header>
+<div id="banner" role="alert" hidden></div>
+<main id="radarView">
+  <section id="radarWrap"><canvas id="radar" aria-label="Radar"></canvas><div id="empty" class="muted">Waiting for data...</div><div id="tip" role="tooltip" hidden></div></section>
+  <aside id="side">
+    <div id="search">
+      <input id="q" type="text" placeholder="Search players to track..." autocomplete="off" spellcheck="false" maxlength="24" aria-label="Search players">
+      <ul id="results" hidden></ul>
+      <div id="chips" aria-label="Tracked players"></div>
+      <label id="onlyRow" class="check muted" hidden><input id="onlyTracked" type="checkbox"> Show only tracked</label>
+    </div>
+    <div class="tabs" role="tablist"><button id="tabList" type="button" role="tab" aria-selected="true">Nearby</button><button id="tabBounty" type="button" role="tab" aria-selected="false">Bounty</button><button id="tabHistory" type="button" role="tab" aria-selected="false">History</button><button id="tabStatus" type="button" role="tab" aria-selected="false">Status</button></div>
+    <div id="summary" class="muted"></div>
+    <ul id="list"></ul>
+    <ol id="bountyList" hidden></ol>
+    <div id="historyPane" class="panel" hidden></div>
+    <div id="statusPane" class="panel" hidden></div>
+    <p id="copied" class="muted" role="status"></p>
+  </aside>
+</main>
+<main id="settingsView" hidden>
+  <section class="form">
+    <div class="tabs stabs" role="tablist">
+      <button type="button" role="tab" data-tab="Connection" aria-selected="true">Connection</button>
+      <button type="button" role="tab" data-tab="Display" aria-selected="false">Display</button>
+      <button type="button" role="tab" data-tab="Appearance" aria-selected="false">Appearance</button>
+      <button type="button" role="tab" data-tab="About" aria-selected="false">About</button>
+    </div>
+    <div id="paneConnection" class="pane">
+      <h2>Connect to a server</h2>
+      <p id="firstRun" class="muted" hidden>Enter the server address and your view key to begin.</p>
+      <label>Server address<input id="serverUrl" type="url" autocomplete="off" spellcheck="false"></label>
+      <label>API key<div id="keyHost"></div></label>
+      <label>Poll every (seconds)<input id="poll_interval_s" type="number" min="5" max="300"></label>
+      <label>Extra certificate file (optional)<input id="caFile" type="text" autocomplete="off" spellcheck="false"></label>
+    </div>
+    <div id="paneDisplay" class="pane" hidden>
+      <h2>Display</h2>
+      <label>Realm <select id="rulesetSel"><option value="normal">Normal</option><option value="pvp">PvP</option><option value="rp">RP</option><option value="rppvp">RP-PvP</option></select></label>
+      <label>Map orientation <select id="orientSel"><option value="std">Standard</option><option value="alt">Axes swapped</option></select></label>
+      <label>Time zone for times <select id="tzSel"></select></label>
+      <label class="check"><input id="trailsChk" type="checkbox"> Show trails of tracked players (press H on the radar)</label>
+    </div>
+    <div id="paneAppearance" class="pane" hidden>
+      <h2>Appearance</h2>
+      <div id="appearanceHost"></div>
+      <div class="buttons"><button id="resetLook" type="button" class="secondary">Reset appearance to defaults</button></div>
+    </div>
+    <div id="paneAbout" class="pane" hidden>
+      <h2>About</h2>
+      <p class="muted">Crimson Ledger shows what your combat-log scout has uploaded. Click a dot or a name to track that player (up to 8); click a tracked name's x to stop. Escape stops tracking everyone. H shows or hides trails.</p>
+      <p class="muted" id="file"></p>
+    </div>
+    <input id="ruleset" type="hidden">
+    <div class="buttons"><button id="save" type="button">Save</button><button id="test" type="button" class="secondary">Test connection</button><button id="back" type="button" class="secondary">Back</button></div>
+    <p id="msg" role="status"></p>
+  </section>
+</main>

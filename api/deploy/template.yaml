@@ -1,0 +1,335 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Crimson Ledger API (API Gateway HTTP API + Lambda arm64 + DynamoDB + SSM, optional custom domain), cheapest viable shape
+
+Parameters:
+  ReservedConcurrency:
+    Type: Number
+    Default: 5
+    MinValue: 1
+    MaxValue: 50
+    Description: Hard cap on parallel executions of the public function (cost and abuse ceiling).
+  TableBilling:
+    Type: String
+    Default: PROVISIONED
+    AllowedValues: [PROVISIONED, PAY_PER_REQUEST]
+    Description: PROVISIONED stays inside the always-free 25 WCU/25 RCU; PAY_PER_REQUEST costs per request.
+  TableWcu:
+    Type: Number
+    Default: 15
+    MinValue: 1
+    Description: Table write capacity units (ignored for PAY_PER_REQUEST).
+  TableRcu:
+    Type: Number
+    Default: 15
+    MinValue: 1
+    Description: Table read capacity units (ignored for PAY_PER_REQUEST).
+  GsiWcu:
+    Type: Number
+    Default: 10
+    MinValue: 1
+    Description: GSI1 write capacity units (ignored for PAY_PER_REQUEST).
+  GsiRcu:
+    Type: Number
+    Default: 10
+    MinValue: 1
+    Description: GSI1 read capacity units (ignored for PAY_PER_REQUEST).
+  PepperParameterName:
+    Type: String
+    Default: /crimson-ledger/pepper
+    AllowedPattern: '^/[A-Za-z0-9_./-]{1,100}$'
+    Description: SSM SecureString holding the base64 key-hashing pepper; created by deploy.sh, never by this template.
+  BudgetEmail:
+    Type: String
+    AllowedPattern: '^[^@\s]+@[^@\s]+$'
+    Description: Where the 5 USD monthly budget alerts go.
+
+  DomainName:
+    Type: String
+    Default: ''
+    AllowedPattern: '^$|^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$'
+    Description: Optional custom host name for the API, lower case (api.example.com). Empty keeps the default execute-api address. With a name set, the default address is switched off so the API is reachable only by that name.
+  CertificateArn:
+    Type: String
+    Default: ''
+    AllowedPattern: '^$|^arn:aws[a-z-]*:acm:[a-z0-9-]+:[0-9]{12}:certificate/[A-Za-z0-9-]+$'
+    Description: ACM certificate for DomainName, in the SAME region as this stack (API Gateway regional domains use a regional certificate). Required with DomainName.
+  HostedZoneId:
+    Type: String
+    Default: ''
+    AllowedPattern: '^$|^Z[A-Z0-9]{5,31}$'
+    Description: Optional Route 53 hosted zone that holds DomainName. When set the stack creates the DNS record; when empty you add one CNAME yourself.
+  ApiRateLimit:
+    Type: Number
+    Default: 20
+    MinValue: 1
+    MaxValue: 1000
+    Description: Requests per second the whole API accepts (API Gateway stage throttle). Above it callers get 429. This is the cost ceiling, and it is shared by every caller.
+  ApiBurstLimit:
+    Type: Number
+    Default: 40
+    MinValue: 1
+    MaxValue: 2000
+    Description: Short-burst allowance on top of ApiRateLimit.
+
+Rules:
+  DomainNeedsCertificate:
+    RuleCondition: !Not [!Equals [!Ref DomainName, '']]
+    Assertions:
+      - Assert: !Not [!Equals [!Ref CertificateArn, '']]
+        AssertDescription: CertificateArn is required when DomainName is set.
+  CertificateNeedsDomain:
+    RuleCondition: !Not [!Equals [!Ref CertificateArn, '']]
+    Assertions:
+      - Assert: !Not [!Equals [!Ref DomainName, '']]
+        AssertDescription: DomainName is required when CertificateArn is set.
+
+Conditions:
+  Provisioned: !Equals [!Ref TableBilling, PROVISIONED]
+  HasDomain: !Not [!Equals [!Ref DomainName, '']]
+  HasZone: !And [!Not [!Equals [!Ref DomainName, '']], !Not [!Equals [!Ref HostedZoneId, '']]]
+
+Resources:
+  Table:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: !Ref TableBilling
+      AttributeDefinitions:
+        - {AttributeName: PK, AttributeType: S}
+        - {AttributeName: SK, AttributeType: S}
+        - {AttributeName: GSI1PK, AttributeType: S}
+        - {AttributeName: GSI1SK, AttributeType: S}
+      KeySchema:
+        - {AttributeName: PK, KeyType: HASH}
+        - {AttributeName: SK, KeyType: RANGE}
+      ProvisionedThroughput: !If
+        - Provisioned
+        - {ReadCapacityUnits: !Ref TableRcu, WriteCapacityUnits: !Ref TableWcu}
+        - !Ref AWS::NoValue
+      GlobalSecondaryIndexes:
+        - IndexName: GSI1
+          KeySchema:
+            - {AttributeName: GSI1PK, KeyType: HASH}
+            - {AttributeName: GSI1SK, KeyType: RANGE}
+          Projection: {ProjectionType: ALL}
+          ProvisionedThroughput: !If
+            - Provisioned
+            - {ReadCapacityUnits: !Ref GsiRcu, WriteCapacityUnits: !Ref GsiWcu}
+            - !Ref AWS::NoValue
+      TimeToLiveSpecification: {AttributeName: ttl, Enabled: true}
+      PointInTimeRecoverySpecification: {PointInTimeRecoveryEnabled: false}
+      SSESpecification: {SSEEnabled: false}   # false = the AWS-owned key, which is free
+
+  PublicFnLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 14
+
+  AdminFnLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 14
+
+  PublicRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: lambda.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: inline
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:PutItem
+                - dynamodb:UpdateItem
+                - dynamodb:Query
+                - dynamodb:BatchWriteItem
+                - dynamodb:BatchGetItem
+                - dynamodb:TransactWriteItems
+              Resource:
+                - !GetAtt Table.Arn
+                - !Sub '${Table.Arn}/index/GSI1'
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${PepperParameterName}'
+            - Effect: Allow
+              Action: [logs:CreateLogStream, logs:PutLogEvents]
+              Resource: !Sub '${PublicFnLogs.Arn}:*'
+
+  PublicFn:
+    Type: AWS::Serverless::Function
+    Properties:
+      Role: !GetAtt PublicRole.Arn
+      CodeUri: ../build/public/
+      Handler: bootstrap
+      Runtime: provided.al2023
+      Architectures: [arm64]
+      MemorySize: 128
+      Timeout: 10
+      ReservedConcurrentExecutions: !Ref ReservedConcurrency
+      Tracing: Disabled
+      LoggingConfig: {LogGroup: !Ref PublicFnLogs}
+      Environment:
+        Variables:
+          TABLE: !Ref Table
+          PEPPER_PARAM: !Ref PepperParameterName
+
+  AdminRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: lambda.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: inline
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem]
+              Resource: !GetAtt Table.Arn
+              Condition:
+                ForAllValues:StringLike: {'dynamodb:LeadingKeys': ['KEY#*']}
+            - Effect: Allow
+              Action: dynamodb:Query
+              Resource: !Sub '${Table.Arn}/index/GSI1'
+              Condition:
+                ForAllValues:StringEquals: {'dynamodb:LeadingKeys': [KEYS]}
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${PepperParameterName}'
+            - Effect: Allow
+              Action: [logs:CreateLogStream, logs:PutLogEvents]
+              Resource: !Sub '${AdminFnLogs.Arn}:*'
+
+  AdminFn:
+    Type: AWS::Serverless::Function
+    Properties:
+      Role: !GetAtt AdminRole.Arn
+      CodeUri: ../build/admin/
+      Handler: bootstrap
+      Runtime: provided.al2023
+      Architectures: [arm64]
+      MemorySize: 128
+      Timeout: 10
+      ReservedConcurrentExecutions: 1
+      Tracing: Disabled
+      LoggingConfig: {LogGroup: !Ref AdminFnLogs}
+      Environment:
+        Variables:
+          TABLE: !Ref Table
+          PEPPER_PARAM: !Ref PepperParameterName
+
+  # ---- Public entry: API Gateway HTTP API -> PublicFn ------------------------------------------------------------
+  # One catch-all route: the Lambda does its own routing, authentication (API keys) and 404s, so nothing is
+  # configured per path. HTTP API (not REST API) is the cheap kind: 1 USD per million requests.
+  HttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub '${AWS::StackName}-api'
+      ProtocolType: HTTP
+      DisableExecuteApiEndpoint: !If [HasDomain, true, false]   # with a custom name, that name is the only way in
+
+  ApiIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt PublicFn.Arn
+      PayloadFormatVersion: '2.0'
+      TimeoutInMillis: 12000   # the function itself times out at 10 s
+
+  ApiRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: $default
+      Target: !Sub 'integrations/${ApiIntegration}'
+
+  ApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    DependsOn: ApiRoute   # the first auto-deployment must already contain the route
+    Properties:
+      ApiId: !Ref HttpApi
+      StageName: $default
+      AutoDeploy: true
+      DefaultRouteSettings:
+        ThrottlingRateLimit: !Ref ApiRateLimit
+        ThrottlingBurstLimit: !Ref ApiBurstLimit
+
+  ApiInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref PublicFn
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*'   # this API only
+
+  # ---- Custom domain (only when DomainName is set) -------------------------------------------------------------
+  ApiDomain:
+    Type: AWS::ApiGatewayV2::DomainName
+    Condition: HasDomain
+    Properties:
+      DomainName: !Ref DomainName
+      DomainNameConfigurations:
+        - EndpointType: REGIONAL
+          CertificateArn: !Ref CertificateArn
+          SecurityPolicy: TLS_1_2
+
+  ApiMapping:
+    Type: AWS::ApiGatewayV2::ApiMapping
+    Condition: HasDomain
+    DependsOn: ApiStage
+    Properties:
+      DomainName: !Ref ApiDomain
+      ApiId: !Ref HttpApi
+      Stage: $default
+
+  ApiRecord:
+    Type: AWS::Route53::RecordSet
+    Condition: HasZone
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref DomainName
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt ApiDomain.RegionalDomainName
+        HostedZoneId: !GetAtt ApiDomain.RegionalHostedZoneId
+        EvaluateTargetHealth: false
+
+  Budget:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit: {Amount: 5, Unit: USD}
+      NotificationsWithSubscribers:
+        - Notification: {NotificationType: ACTUAL, ComparisonOperator: GREATER_THAN, Threshold: 80, ThresholdType: PERCENTAGE}
+          Subscribers: [{SubscriptionType: EMAIL, Address: !Ref BudgetEmail}]
+        - Notification: {NotificationType: FORECASTED, ComparisonOperator: GREATER_THAN, Threshold: 100, ThresholdType: PERCENTAGE}
+          Subscribers: [{SubscriptionType: EMAIL, Address: !Ref BudgetEmail}]
+
+Outputs:
+  ApiUrl:
+    Description: Paste this as server_url into the scout and the viewer.
+    Value: !If [HasDomain, !Sub 'https://${DomainName}', !Sub 'https://${HttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}']
+  DnsTarget:
+    Condition: HasDomain
+    Description: Point DomainName at this name with a CNAME record when you do not use Route 53 (HostedZoneId).
+    Value: !GetAtt ApiDomain.RegionalDomainName
+  AdminFunctionName:
+    Description: Invoke with the AWS CLI to manage keys.
+    Value: !Ref AdminFn
+  TableName:
+    Value: !Ref Table

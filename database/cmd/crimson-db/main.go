@@ -1,0 +1,8 @@
+// Command crimson-db administers the local Crimson Ledger SQLite database.
+package main
+
+import (
+	"os"
+)
+
+func main() { os.Exit(run(os.Args[1:], os.Stdout)) }

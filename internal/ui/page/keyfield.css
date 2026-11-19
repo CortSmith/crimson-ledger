@@ -1,0 +1,4 @@
+.keyfield{display:flex;gap:.4rem;align-items:center}
+.keyfield input{flex:1}
+.keyfield button{background:none;border:1px solid currentColor;border-radius:4px;cursor:pointer;padding:.2rem .4rem}
+.keyfield svg{width:1.1rem;height:1.1rem;display:block}
