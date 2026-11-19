@@ -70,7 +70,7 @@ Done and verified here:
 - `internal/ui/selftest` (+ `Terminate` on `window.Window`), wired into both `*-ui` mains: unit tests green; `go vet -tags webview` clean. Not yet run in a real window.
 - `scripts/package.sh` + `scripts/package-test.sh`: prints `package-test OK` (names, `sha256sum -c`, no `.git`/`.env`/`*.db`/`scripts/poc`, API kept out of the viewer archive).
 - `internal/archtest/ci_test.go`: macOS job is tags-only, release job is tags-only, in the `app-release` context and waits for macOS and Windows.
-- `.circleci/config.yml` parses as YAML (jobs check, build-linux, windows-smoke, build-macos, app-release; workflow `app`, tags `app-vX.Y.Z` so it never collides with the radar-live `vX.Y.Z` release). `circleci config validate` NOT run (CLI missing).
+- `.circleci/config.yml` parses as YAML (jobs check, build-linux, windows-smoke, build-macos, app-release; workflow `app`, tags `vX.Y.Z` (it was `app-vX.Y.Z` while radar-live shared the repo)). `circleci config validate` NOT run (CLI missing).
 - `VERSION` (0.1.0), `docs/INSTALL.md`, `docs/OPERATIONS.md`, `README.md`.
 
 Written, not run: `scripts/build-macos.sh`, `scripts/windows-smoke.ps1`, `scripts/doc-test.sh` (needs `make dist` then Docker pulls of ubuntu/fedora/archlinux), `shellcheck` (not installed here).

@@ -4,7 +4,7 @@ orbs:
   win: circleci/windows@5.1.1
 
 # Crimson Ledger pipeline: jobs check, build-linux, windows-smoke, build-macos, app-release.
-# Tags `app-vX.Y.Z` run everything; branches run only check. macOS minutes cost credits: build-macos is tags only.
+# Tags `vX.Y.Z` run everything; branches run only check. macOS minutes cost credits: build-macos is tags only.
 commands:
   app-setup:
     steps:
@@ -49,7 +49,7 @@ jobs:
       - attach_workspace: {at: .}
       - run:
           name: Tag must match VERSION
-          command: test "$CIRCLE_TAG" = "app-v$(cat VERSION)" || { echo "tag $CIRCLE_TAG != app-v$(cat VERSION)" >&2; exit 1; }
+          command: test "$CIRCLE_TAG" = "v$(cat VERSION)" || { echo "tag $CIRCLE_TAG != v$(cat VERSION)" >&2; exit 1; }
       - run: {name: Package and checksum, command: scripts/package.sh "$(cat VERSION)" dist release}
       - run:
           name: Publish (refuses forks)
@@ -64,13 +64,13 @@ jobs:
 workflows:
   app:
     jobs:
-      - check: {filters: {tags: {only: /^app-v.*/}}}
-      - build-linux: {requires: [check], filters: {tags: {only: /^app-v.*/}}}
-      - windows-smoke: {requires: [build-linux], filters: {tags: {only: /^app-v.*/}}}
+      - check: {filters: {tags: {only: /^v.*/}}}
+      - build-linux: {requires: [check], filters: {tags: {only: /^v.*/}}}
+      - windows-smoke: {requires: [build-linux], filters: {tags: {only: /^v.*/}}}
       - build-macos:
           requires: [check]
-          filters: {tags: {only: /^app-v\d+\.\d+\.\d+$/}, branches: {ignore: /.*/}}
+          filters: {tags: {only: /^v\d+\.\d+\.\d+$/}, branches: {ignore: /.*/}}
       - app-release:
           context: app-release
           requires: [windows-smoke, build-macos]
-          filters: {tags: {only: /^app-v\d+\.\d+\.\d+$/}, branches: {ignore: /.*/}}
+          filters: {tags: {only: /^v\d+\.\d+\.\d+$/}, branches: {ignore: /.*/}}

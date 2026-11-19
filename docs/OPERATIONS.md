@@ -51,13 +51,13 @@ After a rotation, paste the new key into the app and press **Test connection**.
 
 ## What a release costs in CI (free plan)
 
-A tag `app-vX.Y.Z` runs five jobs. The macOS job is the only one that uses paid-tier credits and it runs on tags only.
+A tag `vX.Y.Z` runs five jobs. The macOS job is the only one that uses paid-tier credits and it runs on tags only.
 Check the current credit rate of the macOS resource class in your CircleCI plan page; a build should stay under 5 minutes.
 Branch pushes run only the `check` job.
 
 ## Releasing
 
 1. Set the number in `VERSION` and commit it.
-2. Tag it: `git tag app-v$(cat VERSION) && git push origin app-v$(cat VERSION)`.
+2. Tag it: `git tag v$(cat VERSION) && git push origin v$(cat VERSION)`.
 3. The `app-release` job needs the CircleCI context `app-release` with `GITHUB_TOKEN`. It refuses to run for fork pull requests.
 4. To sign `SHA256SUMS`, add a minisign secret key to the context and set `MINISIGN_KEY` to its path.
