@@ -30,6 +30,7 @@ for t in "${targets[@]}"; do
   echo "$name: $(lipo -info "$out/$name")"
 done
 # Only system frameworks may be linked.
-if otool -L "$out/lib/crimson-ledger-ui" | tail -n +2 | grep -Ev '^\s*(/System/Library/|/usr/lib/)'; then
+# otool -L prints one "file (architecture X):" header per slice of a fat binary; the libraries are the indented lines.
+if otool -L "$out/lib/crimson-ledger-ui" | grep -E '^[[:space:]]' | grep -Ev '^[[:space:]]*(/System/Library/|/usr/lib/)'; then
   echo "unexpected non-system library linked" >&2; exit 1
 fi
