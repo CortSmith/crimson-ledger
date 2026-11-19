@@ -37,6 +37,14 @@ jobs:
     resource_class: m4pro.medium
     steps:
       - checkout
+      - run:
+          name: Install Go 1.26.11 (the macOS image has none; checksum pinned)
+          command: |
+            curl -fsSL -o /tmp/go.tgz https://go.dev/dl/go1.26.11.darwin-arm64.tar.gz
+            echo "e3a42e67a7a8acf450ebada2b074c7ca863000ca514907b7185b45e8f5cdff57  /tmp/go.tgz" | shasum -a 256 -c -
+            sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf /tmp/go.tgz
+            echo 'export PATH=/usr/local/go/bin:$PATH' >> "$BASH_ENV"
+            /usr/local/go/bin/go version
       - run: {name: Universal binaries (arm64 + amd64, ad-hoc signed), command: scripts/build-macos.sh "$(cat VERSION)"}
       - run:
           name: Selftest on the runner
