@@ -13,8 +13,8 @@ die() { echo "DOCKER SMOKE FAILED: $*" >&2; exit 1; }
 
 command -v hadolint >/dev/null && hadolint Dockerfile.api Dockerfile.build || echo "(hadolint not installed, skipped)"
 docker compose config -q || die "docker-compose.yml is invalid"
-[ "$(grep -o 'golang:1.25-bookworm@sha256:[0-9a-f]*' Dockerfile.api | sort -u)" = \
-  "$(grep -o 'golang:1.25-bookworm@sha256:[0-9a-f]*' Dockerfile.build | sort -u)" ] || die "Go image digests differ between Dockerfiles"
+[ "$(grep -o 'golang:1.26-bookworm@sha256:[0-9a-f]*' Dockerfile.api | sort -u)" = \
+  "$(grep -o 'golang:1.26-bookworm@sha256:[0-9a-f]*' Dockerfile.build | sort -u)" ] || die "Go image digests differ between Dockerfiles"
 
 docker build -q -f Dockerfile.api -t "$IMG" . >/dev/null
 size="$(docker image inspect "$IMG" --format '{{.Size}}')"

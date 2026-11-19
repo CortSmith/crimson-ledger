@@ -461,7 +461,7 @@ cache lifetimes for revocable keys, disabling limits, unsafe/`unsafe` package, h
 
 Verified by running code on 2026-11-17 (Linux, Go 1.24.2 installed, toolchain auto-switch on):
 * `purego.Dlopen` under `CGO_ENABLED=0` reports `libwebkit2gtk-4.1.so.0` and `libgtk-3.so.0` present and a bogus library absent. **The preflight design works.**
-* `github.com/ebitengine/purego` v0.11.3 requires Go >= 1.25, so the module is `go 1.25` and Docker uses `golang:1.25`.
+* `github.com/ebitengine/purego` v0.11.3 requires Go >= 1.25, so the module is `go 1.25`. Docker and CI build with Go 1.26.11+ because the Go 1.25 line has no fixes for the standard-library advisories govulncheck reports (GO-2026-66xx).
 
 Open risks (each has a PoC step in a task; do not assume):
 | Risk | Resolved in |

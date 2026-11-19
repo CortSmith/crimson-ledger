@@ -43,7 +43,7 @@ jobs:
           command: dist/macos-universal/crimson-ledger --selftest && dist/macos-universal/crimson-scout --selftest
       - persist_to_workspace: {root: ., paths: [dist/macos-universal]}
   app-release:
-    docker: [{image: "cimg/go:1.25"}]
+    docker: [{image: "cimg/go:1.26"}]
     steps:
       - checkout
       - attach_workspace: {at: .}

@@ -2,7 +2,7 @@
 # Builds, tests and lints every service on any host.
 #   docker build --target check .                                 runs scripts/check.sh
 #   docker build --target artifacts --output type=local,dest=dist .   Linux + Windows + Lambda into ./dist
-ARG GO_IMAGE=golang:1.25-bookworm@sha256:3b4a11519ad929d1e1d261a12cff056f0c85b735253d7d861346b9c6f8b36437
+ARG GO_IMAGE=golang:1.26-bookworm@sha256:dc40a13b61304647ed7e5d581d246b86413dfc29d63c6d018310feb93cd98fc0
 
 FROM ${GO_IMAGE} AS tools
 COPY scripts/tools.env /tmp/tools.env
